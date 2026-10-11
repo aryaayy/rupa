@@ -247,7 +247,12 @@ export function createRupa(config: RupaConfig) {
       const deadline = s.timestamp + 300n;
       const challenge = approvalHash({ chainId: BigInt(deployment.chainId), ledger: addresses.PortLedger, owner, assetId: id, targetAppId: target, mappingId: selected, nonce, deadline });
       notify(options, "passkey:prompt");
-      const assertion = await webauthn.get({ challenge, rpId: deployment.rpId, origin: deployment.origin, credentialId: key.credentialId });
+      // Fallback for older deployments that reject Chromium's extra clientDataJSON keys; bounded retries.
+      let assertion: Awaited<ReturnType<typeof webauthn.get>> | undefined;
+      for (let attempt = 0; !assertion; attempt++) {
+        try { assertion = await webauthn.get({ challenge, rpId: deployment.rpId, origin: deployment.origin, credentialId: key.credentialId }); }
+        catch (error) { if (!(error instanceof RupaError) || error.code !== "UNSUPPORTED_CLIENT_DATA" || attempt >= 2) throw error; }
+      }
       const latest = await snapshot();
       if (latest.timestamp > deadline) throw new RupaError("DEADLINE_EXPIRED", "Passkey approval expired. Request a new approval.");
       if (await client.readContract({ address: addresses.PasskeyApprover, abi: passkeyApproverAbi, functionName: "nonces", args: [owner], blockNumber: latest.number }) !== nonce) throw new RupaError("NONCE_CHANGED", "Another approval or key rotation changed the nonce.");

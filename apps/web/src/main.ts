@@ -77,6 +77,7 @@ async function run(action: () => Promise<void>) {
   try { await action(); await refresh(); }
   catch (error) {
     failure = error instanceof RupaError ? `${error.code}: ${error.message}${error.txHash ? ` Transaction: ${error.txHash}` : ""}` : error instanceof Error ? error.message : "Unable to complete the action.";
+    notice = "That action did not complete. See the error below.";
   } finally { busy = false; render(); }
 }
 function button(label: string, action: string, disabled = false, className = "") {
@@ -160,8 +161,9 @@ document.addEventListener("click", event => {
 async function navigate() {
   activeRoute = location.pathname.slice(1).split("/")[0] || "home";
   if (activeRoute !== "home" && !routes.includes(activeRoute as typeof routes[number])) activeRoute = "docs";
-  failure = ""; assets = []; render();
+  failure = ""; assets = []; busy = true; render();
   try { await refresh(); } catch (error) { failure = error instanceof Error ? error.message : "Unable to load assets."; }
+  finally { busy = false; }
   render(); window.scrollTo(0, 0);
 }
 window.addEventListener("popstate", () => { if (!busy) void navigate(); });

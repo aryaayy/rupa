@@ -12,11 +12,11 @@ The repository now includes the SDK integration, shared mapping interpreter, Nod
 
 | Contract | Monad testnet address |
 | --- | --- |
-| AppRegistry | `0xd114Ad7377BAb635ed247482Ea4fF7bD89c2c86a` |
-| RupaAsset | `0x2cC8F81a40cB9e7a9eb8bBBEd6483F17923257a4` |
-| MappingRegistry | `0xC5040F650aBc306E583EB7A74f7d38710fFBfD7d` |
-| PasskeyApprover | `0x50B46B94f13f04aEE158D28202E38C1CEDEfac39` |
-| PortLedger | `0x373ff4Bd8439F837b504870be4B28ca5c677Fc1f` |
+| AppRegistry | `0x5c4844D52fFC7C0da41E327bF5669B77cb794998` |
+| RupaAsset | `0x158E35817C8a5331FB74dF6F469dAD1fF345E8fa` |
+| MappingRegistry | `0xc76290e99f8F0CBCd3Fe4AC7c2F7FE5202B9d31D` |
+| PasskeyApprover | `0x89D710fb3a50fc552c806F04E7cE977614b25aA3` |
+| PortLedger | `0xcc42457f4Ae0B847fa84A7F5b8E1af4BaEF11C85` |
 
 The [deployment manifest](deployments/monad-testnet.json) is exported as `monadTestnetDeployment` from `@rupa/sdk`. Both ledger bindings are already configured. RP ID is `rupa-mu.vercel.app`; origin is `https://rupa-mu.vercel.app`. Do not redeploy or rebind these contracts.
 

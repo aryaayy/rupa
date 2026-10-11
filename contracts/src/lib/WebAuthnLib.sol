@@ -18,8 +18,10 @@ library WebAuthnLib {
         uint256 s;
     }
 
-    /// @dev MVP accepts exact top-level browser serializations, with optional crossOrigin:false.
-    /// Unknown fields/alternate serialization fail closed; never reserialize signed bytes.
+    /// @dev Accepts the exact browser prefix {"type","challenge","origin"} with optional
+    /// "crossOrigin":false. After "crossOrigin":false, extra top-level keys are allowed because
+    /// Chromium appends them on purpose (e.g. "other_keys_can_be_added_here"). The security-relevant
+    /// prefix is always compared byte for byte; signed bytes are never reserialized.
     function verify(
         bytes32 challenge,
         bytes32 rpIdHash,
@@ -42,16 +44,26 @@ library WebAuthnLib {
         bytes memory prefix = abi.encodePacked(
             '{"type":"webauthn.get","challenge":"', Base64Url.encode(challenge), '","origin":"', origin, '"'
         );
-        bytes32 clientHash = keccak256(client);
-        if (
-            clientHash != keccak256(abi.encodePacked(prefix, "}"))
-                && clientHash != keccak256(abi.encodePacked(prefix, ',"crossOrigin":false}'))
-        ) return false;
+        if (!_acceptedClientData(client, prefix)) return false;
         if (a.r == 0 || a.r >= N || a.s == 0 || a.s > HALF_N) return false;
 
         bytes32 digest = sha256(abi.encodePacked(a.authenticatorData, sha256(client)));
         (bool success, bytes memory result) =
             address(0x0100).staticcall(abi.encodePacked(digest, a.r, a.s, qx, qy));
         return success && result.length == 32 && abi.decode(result, (uint256)) == 1;
+    }
+
+    function _acceptedClientData(bytes memory client, bytes memory prefix) private pure returns (bool) {
+        bytes32 clientHash = keccak256(client);
+        if (clientHash == keccak256(abi.encodePacked(prefix, "}"))) return true;
+        bytes memory withCrossOrigin = abi.encodePacked(prefix, ',"crossOrigin":false');
+        if (clientHash == keccak256(abi.encodePacked(withCrossOrigin, "}"))) return true;
+        // Extra keys: prefix + ',"crossOrigin":false,' + <anything> + '}'
+        uint256 n = withCrossOrigin.length;
+        if (client.length < n + 3 || client[client.length - 1] != "}" || client[n] != ",") return false;
+        for (uint256 i; i < n; ++i) {
+            if (client[i] != withCrossOrigin[i]) return false;
+        }
+        return true;
     }
 }

@@ -225,6 +225,42 @@ contract PasskeyApproverTest is TestBase {
         reject(a);
     }
 
+    function testChromiumExtraKeysAfterCrossOriginAccepted() public {
+        WebAuthnLib.Assertion memory a = validAssertion();
+        bytes memory raw = bytes(a.clientDataJSON);
+        bytes memory base = new bytes(raw.length - 1);
+        for (uint256 i; i < base.length; ++i) {
+            base[i] = raw[i];
+        }
+        a.clientDataJSON = string.concat(
+            string(base),
+            ',"other_keys_can_be_added_here":"do not compare clientDataJSON against a template. See https://goo.gl/yabPex"}'
+        );
+        approve(sign(a, 1));
+        assertEq(approver.nonces(OWNER), 1);
+    }
+
+    function testExtraKeysWithoutCrossOriginOrBadSuffixRejected() public {
+        WebAuthnLib.Assertion memory a = validAssertion();
+        bytes32 challenge_ = ledger.challenge(OWNER, 42, 2, MAPPING, DEADLINE);
+        string memory head = string.concat(
+            '{"type":"webauthn.get","challenge":"',
+            Base64Url.encode(challenge_),
+            '","origin":"http://localhost:5173"'
+        );
+        a.clientDataJSON = string.concat(head, ',"other_keys_can_be_added_here":"x"}');
+        reject(sign(a, 1));
+        a = validAssertion();
+        a.clientDataJSON = string.concat(head, ',"crossOrigin":true,"extra":"x"}');
+        reject(sign(a, 1));
+        a = validAssertion();
+        a.clientDataJSON = string.concat(head, ',"crossOrigin":false,"extra":"x"');
+        reject(sign(a, 1));
+        a = validAssertion();
+        a.clientDataJSON = string.concat(head, ',"crossOrigin":false,}');
+        reject(sign(a, 1));
+    }
+
     function testWrongTypeAndDuplicateFieldsRejected() public {
         WebAuthnLib.Assertion memory a = validAssertion();
         a.clientDataJSON = '{"type":"webauthn.create","challenge":"wrong"}';

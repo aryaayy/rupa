@@ -64,6 +64,16 @@ describe("DER and client data", () => {
     for (const value of unsupported) expect(() => validateClientData(toBytes(value), challenge, origin)).toThrow();
   });
 
+  it("accepts Chromium extra keys after crossOrigin:false and rejects them elsewhere", () => {
+    const extra = client.slice(0, -1) + ',"other_keys_can_be_added_here":"do not compare clientDataJSON against a template. See https://goo.gl/yabPex"}';
+    expect(validateClientData(toBytes(extra), challenge, origin)).toBe(extra);
+    const noCrossOrigin = client.replace(',"crossOrigin":false}', ',"other_keys_can_be_added_here":"x"}');
+    const crossTrue = client.replace('"crossOrigin":false}', '"crossOrigin":true,"extra":"x"}');
+    const noClose = client.slice(0, -1) + ',"extra":"x"';
+    const emptyExtra = client.slice(0, -1) + ",}";
+    for (const value of [noCrossOrigin, crossTrue, noClose, emptyExtra]) expect(() => validateClientData(toBytes(value), challenge, origin)).toThrow();
+  });
+
   it("checks RP, UP/UV and returns Solidity-compatible fields", () => {
     const { privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
     const der = sign("sha256", Buffer.from("test"), privateKey);

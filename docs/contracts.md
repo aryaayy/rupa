@@ -8,11 +8,11 @@ Rincian ABI awal: `PasskeyApprover(rpIdHash, origin, binder)` dan `MappingRegist
 
 | Komponen | Alamat testnet | Status |
 | --- | --- | --- |
-| RupaAsset | `0x2cC8F81a40cB9e7a9eb8bBBEd6483F17923257a4` | Existing; dikonfirmasi pengguna |
-| AppRegistry | `0xd114Ad7377BAb635ed247482Ea4fF7bD89c2c86a` | Existing; dikonfirmasi pengguna |
-| MappingRegistry | `0xC5040F650aBc306E583EB7A74f7d38710fFBfD7d` | Existing; dikonfirmasi pengguna |
-| PasskeyApprover | `0x50B46B94f13f04aEE158D28202E38C1CEDEfac39` | Existing; dikonfirmasi pengguna |
-| PortLedger | `0x373ff4Bd8439F837b504870be4B28ca5c677Fc1f` | Existing; dikonfirmasi pengguna |
+| RupaAsset | `0x158E35817C8a5331FB74dF6F469dAD1fF345E8fa` | Existing; dikonfirmasi pengguna |
+| AppRegistry | `0x5c4844D52fFC7C0da41E327bF5669B77cb794998` | Existing; dikonfirmasi pengguna |
+| MappingRegistry | `0xc76290e99f8F0CBCd3Fe4AC7c2F7FE5202B9d31D` | Existing; dikonfirmasi pengguna |
+| PasskeyApprover | `0x89D710fb3a50fc552c806F04E7cE977614b25aA3` | Existing; dikonfirmasi pengguna |
+| PortLedger | `0xcc42457f4Ae0B847fa84A7F5b8E1af4BaEF11C85` | Existing; dikonfirmasi pengguna |
 | ERC-8004 Identity | `0x8004A818BFB912233c491871b3d84c89A494BD9e` | Upstream; fork keberhasilan dikonfirmasi pengguna, rerun tertahan DNS |
 | ERC-8004 Reputation | `0x8004B663056A597Dffe9eCcC1965A193B7388713` | Upstream; fork keberhasilan dikonfirmasi pengguna, rerun tertahan DNS |
 | P256 precompile | `0x0100` | Windows Hello verifyApproval di Monad dikonfirmasi pengguna |

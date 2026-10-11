@@ -60,13 +60,15 @@ export function decodeDerSignature(signature: Uint8Array): { r: bigint; s: bigin
   return { r, s: s > P256_ORDER / 2n ? P256_ORDER - s : s };
 }
 
-/** Matches the deliberately narrow serialization accepted by WebAuthnLib. */
+/** Matches WebAuthnLib: exact prefix, optional crossOrigin:false, then optional extra keys (Chromium adds them). */
 export function validateClientData(bytes: Uint8Array, challenge: Hex, origin: string): string {
   if (hexToBytes(challenge).length !== 32 || bytes.length > 1024) invalid("Invalid challenge or client data size.");
   let client: string;
   try { client = textDecoder.decode(bytes); } catch { invalid("Invalid UTF-8 client data."); }
   const fields = { type: "webauthn.get", challenge: base64url(hexToBytes(challenge)), origin };
-  if (client !== JSON.stringify(fields) && client !== JSON.stringify({ ...fields, crossOrigin: false })) {
+  const withCrossOrigin = JSON.stringify({ ...fields, crossOrigin: false }).slice(0, -1);
+  const extraKeys = client.length >= withCrossOrigin.length + 3 && client.startsWith(`${withCrossOrigin},`) && client.endsWith("}");
+  if (client !== JSON.stringify(fields) && client !== `${withCrossOrigin}}` && !extraKeys) {
     throw new RupaError("UNSUPPORTED_CLIENT_DATA", "Client data does not match the expected challenge, origin, and supported browser serialization.");
   }
   return client;

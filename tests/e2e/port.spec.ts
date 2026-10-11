@@ -42,8 +42,10 @@ test("Arena → mint → Social and Gallery → real virtual-passkey approvals",
   await ready();
   for (const [route, label] of [["social", "Social"], ["gallery", "Gallery"]] as const) {
     await page.getByRole("navigation").getByRole("link", { name: label, exact: true }).click();
+    await ready();
     await page.getByRole("button", { name: `Bring to ${label}`, exact: true }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Approve with passkey", exact: true })).toBeEnabled();
     await page.getByRole("button", { name: "Approve with passkey", exact: true }).click();
     await expect(page.locator("#notice")).toContainText(`active in ${label}`);
     await ready();
