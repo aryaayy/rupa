@@ -11,10 +11,11 @@ import type { RupaErrorCode } from "./errors.js";
 import { createPasskey, requestAssertion } from "./passkey.js";
 import type { RegisteredPasskey } from "./passkey.js";
 import { verifyProvenance } from "./provenance.js";
-import type { LoadedAsset, MappingData, PortOptions, ProvenanceRecord, RupaAssetView, RupaConfig } from "./types.js";
+import type { AssetBase, LoadedAsset, MappingData, PortOptions, ProvenanceRecord, RupaAssetView, RupaConfig } from "./types.js";
 
 type Snapshot = { number: bigint; hash: Hex; timestamp: bigint };
 const equal = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+const WIN = keccak256(toBytes("WIN"));
 export function mappingPairKey(assetType: Hex, appId: number): Hex {
   return keccak256(encodeAbiParameters([{ type: "bytes32" }, { type: "uint32" }], [assetType, appId]));
 }
@@ -63,8 +64,9 @@ export function createRupa(config: RupaConfig) {
   if (firstBlock !== undefined && firstBlock < 0n) throw new RupaError("INVALID_REQUEST", "Invalid deployment block.");
 
   async function snapshot(): Promise<Snapshot> {
-    if (await client.getChainId() !== deployment.chainId) throw new RupaError("WRONG_CHAIN", "RPC is connected to the wrong chain.");
-    const block = await client.getBlock({ blockTag: "latest" });
+    probeMulticall(); // overlaps the one-time Multicall3 probe with the snapshot round trip
+    const [chainId, block] = await Promise.all([client.getChainId(), client.getBlock({ blockTag: "latest" })]);
+    if (chainId !== deployment.chainId) throw new RupaError("WRONG_CHAIN", "RPC is connected to the wrong chain.");
     return { number: block.number, hash: block.hash, timestamp: block.timestamp };
   }
   async function consistent(s: Snapshot) {
@@ -84,15 +86,79 @@ export function createRupa(config: RupaConfig) {
     firstBlock = low;
     return low;
   }
-  async function scan<T extends { blockNumber: bigint | null; logIndex: number | null; blockHash: Hex | null; removed: boolean }>(tip: bigint, request: (fromBlock: bigint, toBlock: bigint) => Promise<T[]>): Promise<T[]> {
+  async function scan<T extends { blockNumber: bigint | null; logIndex: number | null; blockHash: Hex | null; removed: boolean }>(start: bigint, tip: bigint, request: (fromBlock: bigint, toBlock: bigint) => Promise<T[]>): Promise<T[]> {
     const found: T[] = [];
     const chunks: [bigint, bigint][] = [];
-    for (let from = await startBlock(tip); from <= tip; from += range) chunks.push([from, from + range - 1n > tip ? tip : from + range - 1n]);
+    for (let from = start; from <= tip; from += range) chunks.push([from, from + range - 1n > tip ? tip : from + range - 1n]);
     // Small fixed concurrency keeps 100-block scans fast without tripping public RPC rate limits.
     for (let i = 0; i < chunks.length; i += 4) for (const logs of await Promise.all(chunks.slice(i, i + 4).map(([from, to]) => request(from, to)))) found.push(...logs);
     if (found.some(log => log.removed || log.blockNumber === null || log.blockHash === null || log.logIndex === null)) throw new RupaError("PROVENANCE_INVALID", "Incomplete or removed event log.");
     const unique = [...new Map(found.map(log => [`${log.blockHash}:${log.logIndex}`, log])).values()];
     return unique.sort((a, b) => a.blockNumber! < b.blockNumber! ? -1 : a.blockNumber! > b.blockNumber! ? 1 : a.logIndex! - b.logIndex!);
+  }
+  // Incremental per-asset log caches. Logs are only needed for provenance and win counts, never for discovery.
+  const REORG_DEPTH = 10n;
+  type Cached<T> = { logs: T[]; scanned: bigint };
+  const logCache = new Map<string, Cached<unknown>>();
+  const inFlight = new Map<string, Promise<unknown>>();
+  const mintBlocks = new Map<bigint, bigint>();
+  async function mintBlock(id: bigint, createdAt: bigint, tip: bigint): Promise<bigint> {
+    const known = mintBlocks.get(id);
+    if (known !== undefined) return known;
+    // First block whose timestamp >= createdAt is at or before the mint block (several Monad blocks share a second).
+    // Interpolation search on timestamps (Monad blocks are evenly spaced), bisection fallback; usually 2-4 RPC calls.
+    let low = await startBlock(tip), high = tip;
+    const ts = async (n: bigint) => (await client.getBlock({ blockNumber: n })).timestamp;
+    let lowTs = await ts(low), highTs = await ts(high);
+    if (lowTs >= createdAt) high = low;
+    for (let step = 0; low < high; step++) {
+      // Invariant: ts(low) < createdAt <= ts(high).
+      let mid = step % 2 === 0 && highTs > lowTs ? low + ((createdAt - lowTs) * (high - low)) / (highTs - lowTs) : (low + high) / 2n;
+      if (mid <= low) mid = low + 1n; if (mid >= high) mid = high - 1n;
+      if (mid <= low) { low = high; break; }
+      const midTs = await ts(mid);
+      if (midTs < createdAt) { low = mid; lowTs = midTs; } else { high = mid; highTs = midTs; }
+      if (high - low === 1n) { low = high; break; }
+    }
+    mintBlocks.set(id, low);
+    return low;
+  }
+  type AnyLog = { blockNumber: bigint | null; logIndex: number | null; blockHash: Hex | null; removed: boolean };
+  function cachedScan<T extends AnyLog>(key: string, from: bigint, tip: bigint, request: (fromBlock: bigint, toBlock: bigint) => Promise<T[]>): Promise<T[]> {
+    const flightKey = `${key}@${tip}`;
+    const pending = inFlight.get(flightKey);
+    if (pending) return pending as Promise<T[]>;
+    const run = (async () => {
+      const prior = logCache.get(key) as Cached<T> | undefined;
+      let logs: T[] = [], start = from;
+      if (prior && prior.scanned <= tip) {
+        // Re-scan the last few blocks to drop logs from a minor reorg.
+        start = prior.scanned >= from + REORG_DEPTH ? prior.scanned - REORG_DEPTH + 1n : from;
+        logs = prior.logs.filter(log => log.blockNumber! < start);
+      } else if (prior && prior.scanned > tip) return prior.logs.filter(log => log.blockNumber! <= tip);
+      const fresh = start <= tip ? await scan(start, tip, request) : [];
+      const merged = [...logs, ...fresh];
+      const current = logCache.get(key) as Cached<T> | undefined;
+      if (!current || current.scanned <= tip) logCache.set(key, { logs: merged, scanned: tip });
+      return merged;
+    })();
+    inFlight.set(flightKey, run);
+    void run.then(() => inFlight.delete(flightKey), () => inFlight.delete(flightKey));
+    return run;
+  }
+  let multicallReady: Promise<boolean> | undefined;
+  const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11" as const;
+  function probeMulticall() { return multicallReady ??= client.getBytecode({ address: MULTICALL3 }).then(code => !!code && code !== "0x", () => false); }
+  /** One Multicall3 round trip when deployed (verified once via eth_getCode); bounded parallel reads otherwise. */
+  async function reads(contracts: { address: Address; abi: Abi; functionName: string; args: readonly unknown[] }[], at: bigint): Promise<unknown[]> {
+    if (!contracts.length) return [];
+    if (await probeMulticall()) return client.multicall({ contracts, allowFailure: false, multicallAddress: MULTICALL3, blockNumber: at, batchSize: 4096 } as never) as Promise<unknown[]>;
+    const out: unknown[] = [];
+    for (let i = 0; i < contracts.length; i += 16) out.push(...await Promise.all(contracts.slice(i, i + 16).map(c => client.readContract({ ...c, blockNumber: at } as never))));
+    return out;
+  }
+  async function owners(ids: bigint[], at: bigint): Promise<Address[]> {
+    return reads(ids.map(id => ({ address: addresses.RupaAsset, abi: rupaAssetAbi, functionName: "ownerOfAsset", args: [id] })), at) as Promise<Address[]>;
   }
   const readApp = (id: number, at: bigint) => client.readContract({ address: addresses.AppRegistry, abi: appRegistryAbi, functionName: "getApp", args: [appId(id)], blockNumber: at });
   const readMapping = (id: Hex, at: bigint): Promise<MappingData> => client.readContract({ address: addresses.MappingRegistry, abi: mappingRegistryAbi, functionName: "mappings", args: [id], blockNumber: at });
@@ -100,19 +166,43 @@ export function createRupa(config: RupaConfig) {
     const app = await readApp(id, at);
     return { app, schema: await content(app.schemaURI, app.schemaHash) };
   }
-  async function source(id: bigint, s: Snapshot): Promise<LoadedAsset> {
-    assetId(id);
-    const base = await client.readContract({ address: addresses.RupaAsset, abi: rupaAssetAbi, functionName: "getBase", args: [id], blockNumber: s.number });
-    const owner = await client.readContract({ address: addresses.RupaAsset, abi: rupaAssetAbi, functionName: "ownerOfAsset", args: [id], blockNumber: s.number });
-    const uri = await client.readContract({ address: addresses.RupaAsset, abi: rupaAssetAbi, functionName: "tokenURI", args: [id], blockNumber: s.number });
-    const attrs = await content(uri, base.attrsHash);
-    const wins = await scan(s.number, (fromBlock, toBlock) => client.getContractEvents({ address: addresses.PortLedger, abi: portLedgerAbi, eventName: "Used", args: { assetId: id, appId: base.originAppId }, fromBlock, toBlock, strict: true }));
-    return { base, owner, attrs, context: { base: { rarity: base.rarity }, attrs, history: { wins: wins.filter(log => equal(log.args.actionTag, keccak256(toBytes("WIN")))).length } } };
+  async function winsOf(id: bigint, base: AssetBase, s: Snapshot): Promise<{ wins: number; pending: boolean }> {
+    if (config.winCounts) {
+      // Never block on the index: a slow or warming provider yields a pending count, not a scan.
+      const counts = await Promise.race([config.winCounts([id]).catch(() => undefined), new Promise<undefined>(resolve => setTimeout(resolve, 2_500))]);
+      const entry = counts?.get(id);
+      return { wins: entry?.wins ?? 0, pending: !entry?.final };
+    }
+    const logs = await cachedScan(`used:${id}:${base.originAppId}`, await mintBlock(id, base.createdAt, s.number), s.number, (fromBlock, toBlock) => client.getContractEvents({ address: addresses.PortLedger, abi: portLedgerAbi, eventName: "Used", args: { assetId: id, appId: base.originAppId }, fromBlock, toBlock, strict: true }));
+    return { wins: logs.filter(log => equal(log.args.actionTag, WIN)).length, pending: false };
   }
-  async function provenance(id: bigint, s: Snapshot): Promise<ProvenanceRecord[]> {
+  async function source(id: bigint, s: Snapshot, known?: AssetBase): Promise<LoadedAsset> {
     assetId(id);
-    await client.readContract({ address: addresses.RupaAsset, abi: rupaAssetAbi, functionName: "getBase", args: [id], blockNumber: s.number });
-    const logs = await scan(s.number, (fromBlock, toBlock) => client.getContractEvents({ address: addresses.PortLedger, abi: portLedgerAbi, eventName: "Ported", args: { assetId: id }, fromBlock, toBlock, strict: true }));
+    const [base, owner, uri] = await Promise.all([
+      known ?? client.readContract({ address: addresses.RupaAsset, abi: rupaAssetAbi, functionName: "getBase", args: [id], blockNumber: s.number }),
+      client.readContract({ address: addresses.RupaAsset, abi: rupaAssetAbi, functionName: "ownerOfAsset", args: [id], blockNumber: s.number }),
+      client.readContract({ address: addresses.RupaAsset, abi: rupaAssetAbi, functionName: "tokenURI", args: [id], blockNumber: s.number }),
+    ]);
+    const [attrs, wins] = await Promise.all([content(uri, base.attrsHash), winsOf(id, base, s)]);
+    return { base, owner, attrs, context: { base: { rarity: base.rarity }, attrs, history: { wins: wins.wins } }, ...(wins.pending ? { winsPending: true } : {}) };
+  }
+  /** Owned asset ids and bases from contract state only (no logs): totalMinted + ownerOf/getBase via multicall. */
+  async function owned(owner: Address, s: Snapshot): Promise<{ assetId: bigint; base: AssetBase }[]> {
+    const total = await client.readContract({ address: addresses.RupaAsset, abi: rupaAssetAbi, functionName: "totalMinted", blockNumber: s.number });
+    const ids = Array.from({ length: Number(total) }, (_, i) => BigInt(i + 1));
+    const current = await owners(ids, s.number);
+    const mine = ids.filter((_, i) => equal(current[i]!, owner));
+    const bases = await reads(mine.map(id => ({ address: addresses.RupaAsset, abi: rupaAssetAbi, functionName: "getBase" as const, args: [id] as const })), s.number) as AssetBase[];
+    return mine.map((assetId, i) => ({ assetId, base: bases[i]! }));
+  }
+  async function provenance(id: bigint, s: Snapshot, known?: AssetBase): Promise<ProvenanceRecord[]> {
+    assetId(id);
+    const [base, head] = await Promise.all([
+      known ?? client.readContract({ address: addresses.RupaAsset, abi: rupaAssetAbi, functionName: "getBase", args: [id], blockNumber: s.number }),
+      client.readContract({ address: addresses.PortLedger, abi: portLedgerAbi, functionName: "headOf", args: [id], blockNumber: s.number }),
+    ]);
+    if (head === zeroHash) return [];
+    const logs = await cachedScan(`ported:${id}`, await mintBlock(id, base.createdAt, s.number), s.number, (fromBlock, toBlock) => client.getContractEvents({ address: addresses.PortLedger, abi: portLedgerAbi, eventName: "Ported", args: { assetId: id }, fromBlock, toBlock, strict: true }));
     const records: ProvenanceRecord[] = [];
     const timestamps = new Map<Hex, bigint>();
     for (const log of logs) {
@@ -120,7 +210,6 @@ export function createRupa(config: RupaConfig) {
       const mapping = await readMapping(log.args.mappingId, s.number);
       records.push({ ...log.args, at: timestamps.get(log.blockHash!)!, blockNumber: log.blockNumber!, transactionHash: log.transactionHash!, mappingSchemaVersion: mapping.targetSchemaVersion });
     }
-    const head = await client.readContract({ address: addresses.PortLedger, abi: portLedgerAbi, functionName: "headOf", args: [id], blockNumber: s.number });
     verifyProvenance(records, head, id);
     return records;
   }
@@ -142,16 +231,12 @@ export function createRupa(config: RupaConfig) {
   async function getAssetsFor(owner: Address, targetAppId = config.appId): Promise<RupaAssetView[]> {
     return safe(async () => {
       if (!isAddress(owner)) throw new RupaError("INVALID_REQUEST", "Invalid owner address.");
-      const target = appId(targetAppId), s = await snapshot(), app = await readApp(target, s.number);
-      const incoming = await scan(s.number, (fromBlock, toBlock) => client.getContractEvents({ address: addresses.RupaAsset, abi: rupaAssetAbi, eventName: "Transfer", args: { to: owner }, fromBlock, toBlock, strict: true }));
-      const result: RupaAssetView[] = [];
-      for (const id of new Set(incoming.map(log => log.args.tokenId))) {
-        const currentOwner = await client.readContract({ address: addresses.RupaAsset, abi: rupaAssetAbi, functionName: "ownerOfAsset", args: [id], blockNumber: s.number });
-        if (!equal(currentOwner, owner)) continue;
-        const asset = await source(id, s), history = await provenance(id, s);
-        const item: RupaAssetView = { assetId: id, base: asset.base, attrs: asset.attrs, origin: { appId: asset.base.originAppId }, provenance: history, status: "portable" };
-        if (asset.base.originAppId === target) { result.push({ ...item, status: "active", view: asset.attrs }); continue; }
-        const activation = await client.readContract({ address: addresses.PortLedger, abi: portLedgerAbi, functionName: "activeIn", args: [id, target], blockNumber: s.number });
+      const target = appId(targetAppId), s = await snapshot();
+      const [app, mine] = await Promise.all([readApp(target, s.number), owned(owner, s)]);
+      const result = await Promise.all(mine.map(async ({ assetId: id, base }): Promise<RupaAssetView> => {
+        const [asset, history, activation] = await Promise.all([source(id, s, base), provenance(id, s, base), base.originAppId === target ? zeroHash : client.readContract({ address: addresses.PortLedger, abi: portLedgerAbi, functionName: "activeIn", args: [id, target], blockNumber: s.number })]);
+        const item: RupaAssetView = { assetId: id, base: asset.base, attrs: asset.attrs, origin: { appId: asset.base.originAppId }, provenance: history, status: "portable", ...(asset.winsPending ? { winsPending: true } : {}) };
+        if (asset.base.originAppId === target) return { ...item, status: "active", view: asset.attrs };
         const active = await usable(activation, asset.base.assetType, target, app.version, s.number);
         const selected = active ? activation : await client.readContract({ address: addresses.MappingRegistry, abi: mappingRegistryAbi, functionName: "activeMapping", args: [mappingPairKey(asset.base.assetType, target)], blockNumber: s.number });
         if (await usable(selected, asset.base.assetType, target, app.version, s.number)) {
@@ -167,8 +252,8 @@ export function createRupa(config: RupaConfig) {
         } else if (!config.agentUrl || (config.supportedAssetTypes && !config.supportedAssetTypes.some(type => equal(type, asset.base.assetType)))) {
           item.status = "unsupported"; item.reason = "No usable mapping or configured agent for this type.";
         } else if (activation !== zeroHash) item.reason = "Previous activation is revoked or uses an older schema; approval is needed again.";
-        result.push(item);
-      }
+        return item;
+      }));
       await consistent(s);
       return result;
     });
@@ -272,6 +357,7 @@ export function createRupa(config: RupaConfig) {
   return {
     getAssetsFor, port,
     getProvenance: (id: bigint) => safe(async () => { const s = await snapshot(); const result = await provenance(id, s); await consistent(s); return result; }),
+    getOwnedAssets: (owner: Address) => safe(async () => { if (!isAddress(owner)) throw new RupaError("INVALID_REQUEST", "Invalid owner address."); const s = await snapshot(); const result = await owned(owner, s); await consistent(s); return result; }),
     getSourceAsset: (id: bigint) => safe(async () => { const s = await snapshot(); const result = await source(id, s); await consistent(s); return result; }),
     getAppSchema: (id: number) => safe(async () => { const s = await snapshot(); const result = await appSchema(id, s.number); await consistent(s); return result; }),
     passkey: { register: () => registerPasskey(), rotate: () => registerPasskey(true) },

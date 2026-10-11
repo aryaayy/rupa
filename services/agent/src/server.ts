@@ -12,7 +12,7 @@ export interface PublicConfig {
   deployment: RupaDeployment; apps: { arena: number; social: number; gallery: number };
   agentId: string; llmMode: "mock" | "openai-compatible"; faucet: boolean;
 }
-export function createAgentApp(options: { config: PublicConfig; translator: ReturnType<typeof createTranslator>; demo?: ReturnType<typeof createDemoAccess> }) {
+export function createAgentApp(options: { config: PublicConfig; translator: ReturnType<typeof createTranslator>; demo?: ReturnType<typeof createDemoAccess>; wins?: { query: (ids: readonly bigint[]) => unknown } }) {
   const rate = new RateLimiter();
   async function handle(request: Request, ip: string): Promise<Response> {
     const requestId = randomUUID(), origin = request.headers.get("origin");
@@ -26,6 +26,14 @@ export function createAgentApp(options: { config: PublicConfig; translator: Retu
       const path = new URL(request.url).pathname;
       if (request.method === "GET" && path === "/health") return json({ status: "ok", chainId: options.config.deployment.chainId, mode: options.config.llmMode });
       if (request.method === "GET" && path === "/config") return json(options.config);
+      if (request.method === "GET" && path === "/wins") {
+        // Answers instantly from the warm index (possibly partial while it backfills); never waits on the chain.
+        if (!options.wins) throw new RupaError("DEPENDENCY_UNAVAILABLE", "Win index is disabled.");
+        const raw = new URL(request.url).searchParams.get("assetIds") ?? "";
+        const ids = raw.split(",").filter(Boolean);
+        if (!ids.length || ids.length > 50 || ids.some(id => !/^[1-9][0-9]{0,77}$/.test(id))) throw new RupaError("INVALID_REQUEST", "Expected assetIds=1,2,… (max 50).");
+        return json(options.wins.query(ids.map(BigInt)));
+      }
       if (request.method === "GET" && path === "/.well-known/agent-card.json") return json({ name: "Rupa Translator", description: "Reusable, deterministically validated asset mapping rules", agentId: options.config.agentId, chainId: options.config.deployment.chainId, mode: options.config.llmMode, services: [{ name: "translation", endpoint: "/translate" }], supportedTrust: [] });
       if (request.method !== "POST") return json({ error: { code: "INVALID_REQUEST", message: "Route not found.", requestId } }, 404);
       if (!request.headers.get("content-type")?.startsWith("application/json")) throw new RupaError("INVALID_REQUEST", "Expected application/json.");

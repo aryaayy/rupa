@@ -1,6 +1,7 @@
 import { createPublicClient, createWalletClient, defineChain, formatEther, http, keccak256, toBytes } from "viem";
 import type { Address, Hex, PublicClient, WalletClient } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { claimReward } from "./reward.js";
 import { base64url, createRupa, monadTestnetDeployment, passkeyApproverAbi, RupaError } from "@rupa/sdk";
 import type { PortPreview, RegisteredPasskey, RupaAssetView, RupaDeployment } from "@rupa/sdk";
 import { mountCapture } from "./capture.js";
@@ -28,9 +29,24 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
   }
   return result as T;
 }
+let sdkCache: { publicClient: PublicClient; walletClient: WalletClient | undefined; config: AppConfig; rupa: ReturnType<typeof createRupa> } | undefined;
+type WinIndexSnapshot = { ready: boolean; counts: Record<string, { wins: number; final: boolean; latestBlock: string | null }> };
+async function winStatus(ids: readonly bigint[]): Promise<WinIndexSnapshot | undefined> {
+  if (!agentUrl || !ids.length) return undefined;
+  try {
+    const response = await fetch(`${agentUrl}/wins?assetIds=${ids.join(",")}`, { signal: AbortSignal.timeout(2_000) });
+    return response.ok ? await response.json() as WinIndexSnapshot : undefined;
+  } catch { return undefined; }
+}
+async function winCounts(ids: readonly bigint[]) {
+  const snapshot = await winStatus(ids);
+  return snapshot ? new Map(ids.flatMap(id => { const entry = snapshot.counts[id.toString()]; return entry ? [[id, entry] as const] : []; })) : undefined;
+}
 function sdk() {
   if (!config || !publicClient) throw new Error("Demo service is not connected yet.");
-  return createRupa({ publicClient, ...(walletClient ? { walletClient } : {}), deployment: config.deployment, agentUrl, supportedAssetTypes: [keccak256(toBytes("rupa.weapon.sword"))] });
+  // Reuse one SDK instance per client pair so its per-asset log caches survive between refreshes.
+  if (sdkCache?.publicClient !== publicClient || sdkCache.walletClient !== walletClient || sdkCache.config !== config) sdkCache = { publicClient, walletClient, config, rupa: createRupa({ publicClient, ...(walletClient ? { walletClient } : {}), deployment: config.deployment, agentUrl, winCounts, supportedAssetTypes: [keccak256(toBytes("rupa.weapon.sword"))] }) };
+  return sdkCache.rupa;
 }
 function storageKey(name: string) { return `rupa:${config?.deployment.chainId}:${config?.deployment.contracts.PortLedger}:${name}`; }
 function keyStorage() { return storageKey(`passkey:${walletClient?.account?.address}`); }
@@ -64,11 +80,28 @@ async function refresh() {
   if (!["arena", "social", "gallery"].includes(activeRoute)) return;
   if (!walletClient?.account || !config || !publicClient) return;
   const account = walletClient.account.address;
-  balance = formatEther(await publicClient.getBalance({ address: account }));
-  const key = await publicClient.readContract({ address: config.deployment.contracts.PasskeyApprover, abi: passkeyApproverAbi, functionName: "keyOf", args: [account] });
-  registered = key[2] !== `0x${"0".repeat(64)}`;
   const target = config.apps[activeRoute as "arena" | "social" | "gallery"];
-  if (target) { const result = await sdk().getAssetsFor(account, target); if (epoch === loadEpoch) assets = result; }
+  // Independent reads run together; win counts come from the agent index and never block this refresh.
+  const [wei, key, result] = await Promise.all([
+    publicClient.getBalance({ address: account }),
+    publicClient.readContract({ address: config.deployment.contracts.PasskeyApprover, abi: passkeyApproverAbi, functionName: "keyOf", args: [account] }),
+    target ? sdk().getAssetsFor(account, target) : Promise.resolve(undefined),
+  ]);
+  balance = formatEther(wei);
+  registered = key[2] !== `0x${"0".repeat(64)}`;
+  if (result && epoch === loadEpoch) { assets = result; if (result.some(asset => asset.winsPending)) refreshPendingWins(epoch, account, target); }
+}
+/** Background re-read while the agent's win index warms up; updates the cards without touching aria-busy. */
+function refreshPendingWins(epoch: number, account: `0x${string}`, target: number, tries = 0) {
+  if (tries >= 12) return;
+  setTimeout(() => {
+    if (epoch !== loadEpoch || busy) { if (epoch === loadEpoch) refreshPendingWins(epoch, account, target, tries); return; }
+    void sdk().getAssetsFor(account, target).then(result => {
+      if (epoch !== loadEpoch || busy) return;
+      assets = result; render();
+      if (result.some(asset => asset.winsPending)) refreshPendingWins(epoch, account, target, tries + 1);
+    }, () => refreshPendingWins(epoch, account, target, tries + 1));
+  }, Math.min(2_000 * 2 ** tries, 10_000));
 }
 function status(message: string) { notice = message; const node = document.querySelector("#notice"); if (node) node.textContent = message; }
 async function run(action: () => Promise<void>) {
@@ -147,7 +180,7 @@ root.addEventListener("click", event => {
     else if (action === "register") { status("Complete the passkey prompt, then wait for registration onchain."); persistPasskey(await (registered ? sdk().passkey.rotate() : sdk().passkey.register())); status("Passkey registered onchain. You can approve new forms."); }
     else if (action === "start") { if (!session) await signIn(); const result = await api<{ move: string }>("/demo/start", {}); move = result.move; won = false; status("Duel started. Read the guardian's next move."); }
     else if (action.startsWith("move:")) { const result = await api<{ move: string | null; won: boolean }>("/demo/play", { move: action.slice(5) }); move = result.move; won = result.won; status(won ? "Victory! Claim your reward." : move ? "Good move. Stay focused." : "The guardian won. Start another duel."); }
-    else if (action === "reward") { const result = await api<{ assetId: string; minted: boolean }>("/demo/reward", {}); won = false; move = null; status(result.minted ? `Relic #${result.assetId} minted to your wallet.` : `New WIN recorded for relic #${result.assetId}. Refresh Social to see its title change.`); }
+    else if (action === "reward") { const owner = walletClient?.account?.address, arena = config?.apps.arena ?? 0, existing = assets.find(asset => asset.base.originAppId === arena && asset.base.assetType === keccak256(toBytes("rupa.weapon.sword")))?.assetId; const result = await claimReward(() => api<{ assetId: string; minted: boolean }>("/demo/reward", {}), { ...(existing === undefined ? {} : { existing }), loadOwned: async () => owner ? sdk().getOwnedAssets(owner) : [], winStatus: async id => (await winStatus([id]))?.counts[id.toString()] }); won = false; move = null; status(result.minted ? `Relic #${result.assetId} minted to your wallet.` : `New WIN recorded for relic #${result.assetId}. Refresh Social to see its title change.`); }
     else if (action.startsWith("port:")) {
       if (!passkey || !config) throw new Error("Register a passkey first.");
       const target = config.apps[activeRoute as "social" | "gallery"];

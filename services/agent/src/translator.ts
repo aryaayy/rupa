@@ -34,6 +34,8 @@ export function createTranslator(options: { chain: TranslationChain; provider: R
     if (cached) { await options.chain.validateCached(cached, asset, targetAppId); remember(pair, cached); stats.reused++; return { ...cached, reused: true }; }
     const existing = pending.get(pair);
     if (existing) { const proposal = await existing; await options.chain.validateCached(proposal, asset, targetAppId); stats.reused++; return { ...proposal, reused: true }; }
+    // Do not author a new rule from an incomplete history (agent win index still warming after a cold start).
+    if (asset.winsPending) throw new RupaError("DEPENDENCY_UNAVAILABLE", "Asset history is still loading. Retry in a few seconds.");
     if (pending.size >= 4) throw new RupaError("RATE_LIMITED", "Translation capacity reached.");
     rate.take(asset.base.assetType, 6, 60_000);
     const task = (async () => {

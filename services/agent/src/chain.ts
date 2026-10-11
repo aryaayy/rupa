@@ -1,6 +1,6 @@
 import { applyMapping, parseMapping } from "@rupa/mapping-dsl";
 import { appRegistryAbi, createContentReader, createRupa, mappingId, mappingPairKey, mappingRegistryAbi, RupaError } from "@rupa/sdk";
-import type { RupaDeployment } from "@rupa/sdk";
+import type { RupaConfig, RupaDeployment } from "@rupa/sdk";
 import { keccak256, parseAbi, toBytes, zeroAddress, zeroHash } from "viem";
 import type { Address, Hex, PublicClient, WalletClient } from "viem";
 import type { Proposal, TranslationChain } from "./translator.js";
@@ -12,9 +12,9 @@ export const identityAbi = parseAbi([
   "function register(string agentURI) returns (uint256 agentId)",
   "event Registered(uint256 indexed agentId, string agentURI, address indexed owner)",
 ]);
-export function createTranslationChain(options: { publicClient: PublicClient; walletClient: WalletClient; deployment: RupaDeployment; agentId: bigint; identityRegistry: Address; gateway?: string }): TranslationChain {
+export function createTranslationChain(options: { publicClient: PublicClient; walletClient: WalletClient; deployment: RupaDeployment; agentId: bigint; identityRegistry: Address; gateway?: string; winCounts?: RupaConfig["winCounts"] }): TranslationChain {
   const { publicClient: client, walletClient: wallet, deployment: d, agentId } = options;
-  const sdk = createRupa({ publicClient: client, deployment: d, ...(options.gateway ? { ipfsGateway: options.gateway } : {}) });
+  const sdk = createRupa({ publicClient: client, deployment: d, ...(options.gateway ? { ipfsGateway: options.gateway } : {}), ...(options.winCounts ? { winCounts: options.winCounts } : {}) });
   const content = createContentReader(options.gateway ? { gateway: options.gateway } : {});
   const queue = serialQueue();
   const submitted = new Map<string, Proposal>();

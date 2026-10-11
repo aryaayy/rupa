@@ -33,6 +33,15 @@ describe("mapping agent", () => {
       expect(f.provider).toHaveBeenCalledOnce(); expect(f.publish).toHaveBeenCalledOnce();
     }
   });
+  it("refuses to author a new rule while the asset's win history is still loading", async () => {
+    const f = setup();
+    (f.source as { winsPending?: boolean }).winsPending = true;
+    await expect(f.translator.translate(1n, 2)).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
+    expect(f.provider).not.toHaveBeenCalled();
+    delete (f.source as { winsPending?: boolean }).winsPending;
+    await f.translator.translate(1n, 2);
+    expect(f.provider).toHaveBeenCalledOnce();
+  });
   it("deduplicates concurrent requests and reuses the current proposal", async () => {
     const f = setup();
     const [a, b] = await Promise.all([f.translator.translate(1n, 2), f.translator.translate(2n, 2)]);

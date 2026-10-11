@@ -26,6 +26,7 @@ function fixture() {
     switch (functionName) {
       case "getApp": return { admin: owner, minter: owner, payout: owner, schemaHash: schemaContent.hash, schemaURI: schemaContent.uri, royaltyBps: 100, version: state.version };
       case "ownerOfAsset": return state.owner;
+      case "totalMinted": return 1n;
       case "getBase": return base;
       case "tokenURI": return attrs.uri;
       case "mappings": return { ...data, revoked: state.revoked };
@@ -41,7 +42,7 @@ function fixture() {
     }
   });
   const publicClient = {
-    getChainId: vi.fn(async () => 31337), getBlock: vi.fn(async () => ({ number: 10n, hash: blockHash, timestamp: 100n })), readContract: read,
+    getChainId: vi.fn(async () => 31337), getBytecode: vi.fn(async (): Promise<Hex | undefined> => undefined), multicall: vi.fn(), getBlock: vi.fn(async () => ({ number: 10n, hash: blockHash, timestamp: 100n })), readContract: read,
     getContractEvents: vi.fn(async ({ eventName }: { eventName: string }) => {
       if (eventName === "Transfer") return [log({ tokenId: 1n, to: owner, from: other }), log({ tokenId: 1n, to: owner, from: other })];
       if (eventName === "Used") return [log({ actionTag: keccak256(toBytes("WIN")), assetId: 1n, appId: 1 })];
@@ -66,8 +67,51 @@ describe("deployment and SDK client", () => {
     const f = fixture();
     f.publicClient.getBlock.mockImplementation(async () => ({ number: 450n, hash: blockHash, timestamp: 100n }));
     await createRupa(f.config).getAssetsFor(owner, 2);
-    const spans = f.publicClient.getContractEvents.mock.calls.map(([call]) => call as unknown as { eventName: string; fromBlock: bigint; toBlock: bigint }).filter(call => call.eventName === "Transfer");
+    const spans = f.publicClient.getContractEvents.mock.calls.map(([call]) => call as unknown as { eventName: string; fromBlock: bigint; toBlock: bigint }).filter(call => call.eventName === "Used");
     expect(spans.map(call => [call.fromBlock, call.toBlock])).toEqual([[0n, 99n], [100n, 199n], [200n, 299n], [300n, 399n], [400n, 450n]]);
+  });
+  it("discovers assets from contract state without scanning Transfer logs", async () => {
+    const f = fixture();
+    await f.rupa.getAssetsFor(owner, 2);
+    expect(f.publicClient.getContractEvents.mock.calls.some(([call]) => (call as { eventName: string }).eventName === "Transfer")).toBe(false);
+  });
+  it("uses Multicall3 for owner lookups when deployed", async () => {
+    const f = fixture();
+    f.publicClient.getBytecode.mockResolvedValue("0x60" as Hex);
+    f.publicClient.multicall.mockImplementation((async ({ contracts }: { contracts: { functionName: string; args: [bigint] }[] }) => Promise.all(contracts.map(c => f.publicClient.readContract(c)))) as never);
+    expect(await createRupa(f.config).getAssetsFor(owner, 2)).toHaveLength(1);
+    expect(f.publicClient.multicall).toHaveBeenCalledWith(expect.objectContaining({ multicallAddress: "0xcA11bde05977b3631167028862bE2a173976CA11" }));
+  });
+  it("incremental log cache: second call only fetches new blocks (minus reorg window)", async () => {
+    const f = fixture();
+    let tip = 450n;
+    f.publicClient.getBlock.mockImplementation(async () => ({ number: tip, hash: blockHash, timestamp: 100n }));
+    const rupa = createRupa(f.config);
+    await rupa.getAssetsFor(owner, 2);
+    f.publicClient.getContractEvents.mockClear();
+    tip = 520n;
+    await rupa.getAssetsFor(owner, 2);
+    const spans = f.publicClient.getContractEvents.mock.calls.map(([call]) => call as unknown as { fromBlock: bigint; toBlock: bigint });
+    expect(spans.map(call => [call.fromBlock, call.toBlock])).toEqual([[441n, 520n]]);
+  });
+  it("concurrent calls share one in-flight scan", async () => {
+    const f = fixture();
+    f.publicClient.getBlock.mockImplementation(async () => ({ number: 250n, hash: blockHash, timestamp: 100n }));
+    const rupa = createRupa(f.config);
+    await Promise.all([rupa.getAssetsFor(owner, 2), rupa.getAssetsFor(owner, 2), rupa.getAssetsFor(owner, 2)]);
+    expect(f.publicClient.getContractEvents.mock.calls.length).toBe(3);
+  });
+  it("starts per-asset scans at the mint block found by timestamp", async () => {
+    const f = fixture();
+    f.publicClient.getBlock.mockImplementation(async (args?: unknown) => {
+      const n = (args as { blockNumber?: bigint } | undefined)?.blockNumber;
+      return n === undefined ? { number: 1000n, hash: blockHash, timestamp: 1000n } : { number: n, hash: blockHash, timestamp: n };
+    });
+    f.state.owner = owner;
+    const rupa = createRupa({ ...f.config });
+    await rupa.getAssetsFor(owner, 2);
+    const froms = f.publicClient.getContractEvents.mock.calls.map(([call]) => (call as unknown as { fromBlock: bigint }).fromBlock);
+    expect(froms[0]).toBe(1n);
   });
   it("deduplicates discovery, checks live owners, and evaluates a cached mapping", async () => {
     const f = fixture();
@@ -142,5 +186,24 @@ describe("deployment and SDK client", () => {
     await expect(f.rupa.port(1n, 2, key)).rejects.toMatchObject({ code: "NOT_OWNER" });
     f.state.owner = owner;
     await expect(f.rupa.port(1n, 2, { ...key, credIdHash: zeroHash })).rejects.toMatchObject({ code: "NO_PASSKEY" });
+  });
+});
+describe("win counts", () => {
+  it("uses a supplied win-count source instead of scanning Used logs, and flags non-final counts", async () => {
+    const f = fixture();
+    const rupa = createRupa({ ...f.config, winCounts: async ids => new Map(ids.map(id => [id, { wins: 4, final: false }])) });
+    const [asset] = await rupa.getAssetsFor(owner, 2);
+    expect(asset).toMatchObject({ winsPending: true, view: { title: "Fire Sword — 4 wins" } });
+    expect(f.publicClient.getContractEvents.mock.calls.some(([call]) => (call as { eventName: string }).eventName === "Used")).toBe(false);
+  });
+  it("never blocks on an unavailable win-count source", async () => {
+    const f = fixture();
+    const rupa = createRupa({ ...f.config, winCounts: async () => { throw new Error("agent asleep"); } });
+    expect((await rupa.getAssetsFor(owner, 2))[0]).toMatchObject({ winsPending: true, view: { title: "Fire Sword — 0 wins" } });
+  });
+  it("lists owned assets from contract state only", async () => {
+    const f = fixture();
+    expect(await f.rupa.getOwnedAssets(owner)).toMatchObject([{ assetId: 1n, base: { originAppId: 1 } }]);
+    expect(f.publicClient.getContractEvents).not.toHaveBeenCalled();
   });
 });

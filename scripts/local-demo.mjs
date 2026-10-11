@@ -10,6 +10,7 @@ import { inlinePublisher, mockProvider } from "../services/agent/dist/provider.j
 import { createTranslator } from "../services/agent/dist/translator.js";
 import { createAgentApp, nodeServer } from "../services/agent/dist/server.js";
 import { registerDemo } from "../services/agent/dist/setup.js";
+import { createWinIndex } from "../services/agent/dist/win-index.js";
 import { sha256, toBytes } from "viem";
 
 const children = [];
@@ -68,8 +69,10 @@ try {
   const deployment = { chainId: 31337, rpcUrl, rpId: "localhost", origin: "http://localhost:5173", deploymentBlock: "0", contracts };
   const setup = await registerDemo({ publicClient: client, admin, agent, deployment, identityRegistry, publish: inlinePublisher, agentUrl: "http://localhost:8787", agentId: 1n });
   const translator = createTranslator({ chain: createTranslationChain({ publicClient: client, walletClient: agent, deployment, identityRegistry, agentId: 1n }), provider: mockProvider, publish: inlinePublisher, namespace: `31337:${contracts.MappingRegistry}`, types: { [RELIC_TYPE_HASH.toLowerCase()]: RELIC_TYPE } });
-  const demo = createDemoAccess({ origin: deployment.origin, chainId: deployment.chainId, actions: createDemoActions({ publicClient: client, admin, funder: admin, deployment, arena: setup.apps.arena }) });
-  server = nodeServer(createAgentApp({ config: { deployment, apps: setup.apps, agentId: setup.agentId, llmMode: "mock", faucet: true }, translator, demo }));
+  const wins = createWinIndex({ publicClient: client, deployment, interval: 500 });
+  wins.start();
+  const demo = createDemoAccess({ origin: deployment.origin, chainId: deployment.chainId, actions: createDemoActions({ publicClient: client, admin, funder: admin, deployment, arena: setup.apps.arena, afterReward: () => wins.refresh() }) });
+  server = nodeServer(createAgentApp({ config: { deployment, apps: setup.apps, agentId: setup.agentId, llmMode: "mock", faucet: true }, translator, demo, wins }));
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(8787, "localhost", resolve); });
   await mkdir(".local", { recursive: true });
   await writeFile(".local/deployment.json", JSON.stringify({ ...deployment, ...setup, identityRegistry }, null, 2) + "\n");

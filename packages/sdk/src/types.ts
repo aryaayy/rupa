@@ -15,6 +15,8 @@ export interface RupaAssetView {
   origin: { appId: number }; provenance: ProvenanceRecord[]; view?: JsonObject; reason?: string;
   mapping?: { id: Hex; schemaVersion: bigint; agentId: bigint };
   activation?: { mappingId: Hex; approver: Address; approvedByPreviousOwner: boolean };
+  /** True when the win count used for `view` is not yet final (index still warming or unreachable). */
+  winsPending?: boolean;
 }
 export type PortStep = "mapping:cached" | "mapping:requesting" | "passkey:prompt" | "tx:sent" | "tx:confirmed";
 export type PortPreview = { assetId: bigint; targetAppId: number; mappingId: Hex; agentId: bigint; schemaVersion: bigint; fee: bigint; view: JsonObject };
@@ -28,9 +30,14 @@ export interface RupaConfig {
   content?: (uri: string, hash: Hex) => Promise<JsonObject>;
   contentOrigins?: readonly string[]; ipfsGateway?: string;
   supportedAssetTypes?: readonly Hex[];
+  /**
+   * Optional fast win-count source (e.g. the agent's warm Used-log index). When set, asset reads never scan
+   * Used logs; ids missing from the result or not marked final are returned with `winsPending: true`.
+   */
+  winCounts?: (assetIds: readonly bigint[]) => Promise<ReadonlyMap<bigint, { wins: number; final: boolean }> | undefined>;
   webauthn?: {
     create: (options: { rpId: string; owner: Address }) => Promise<RegisteredPasskey>;
     get: (options: { challenge: Hex; rpId: string; origin: string; credentialId: Uint8Array<ArrayBuffer> }) => Promise<PasskeyAssertion>;
   };
 }
-export type LoadedAsset = { base: AssetBase; owner: Address; attrs: JsonObject; context: AssetContext };
+export type LoadedAsset = { base: AssetBase; owner: Address; attrs: JsonObject; context: AssetContext; winsPending?: boolean };
