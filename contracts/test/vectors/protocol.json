@@ -1,0 +1,26 @@
+{
+  "source": "synthetic-public-encoding-fixture-not-a-deployment",
+  "approval": {
+    "chainId": "10143",
+    "ledger": "0x2222222222222222222222222222222222222222",
+    "owner": "0x1111111111111111111111111111111111111111",
+    "assetId": "42",
+    "targetAppId": 2,
+    "mappingId": "0xabababababababababababababababababababababababababababababababab",
+    "nonce": "0",
+    "deadline": "2000"
+  },
+  "approvalHash": "0x31c2ca8f3679a46be09c5f5a16bc1f2c16491435c5242a57d908362571545680",
+  "challenge": "McLKjzZ5pGvgnF9aFrwfLBZJFDXFJCpX2Qg2JXFUVoA",
+  "record": {
+    "assetId": "42",
+    "fromAppId": 1,
+    "toAppId": 2,
+    "mappingId": "0xabababababababababababababababababababababababababababababababab",
+    "agentId": "7",
+    "approver": "0x1111111111111111111111111111111111111111",
+    "at": "1000",
+    "prevRecord": "0x0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "recordId": "0xd377693b00b91f88ff3d5442e2f5493cf8ab7bdd2d34b11e0cac0ae43a10afa2"
+}
