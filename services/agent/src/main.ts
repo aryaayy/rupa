@@ -1,0 +1,47 @@
+import { readFile } from "node:fs/promises";
+import { createPublicClient, createWalletClient, defineChain, http, isAddress } from "viem";
+import type { Address, Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { monadTestnetDeployment } from "@rupa/sdk";
+import type { RupaDeployment } from "@rupa/sdk";
+import { createTranslationChain } from "./chain.js";
+import { createDemoAccess, RELIC_TYPE, RELIC_TYPE_HASH } from "./demo.js";
+import { createDemoActions } from "./demo-chain.js";
+import { httpProvider, inlinePublisher, mockProvider, pinataPublisher } from "./provider.js";
+import { createAgentApp, nodeServer } from "./server.js";
+import type { PublicConfig } from "./server.js";
+import { createTranslator } from "./translator.js";
+
+async function main() {
+  const manifest = JSON.parse(await readFile(process.env.RUPA_RUNTIME_FILE || "deployments/monad-testnet.json", "utf8")) as RupaDeployment & { apps: PublicConfig["apps"]; identityRegistry: Address; agentId?: string };
+  const appIds = manifest.apps;
+  if (!appIds || ![appIds.arena, appIds.social, appIds.gallery].every(id => Number.isInteger(id) && id > 0)) throw new Error("Register demo apps using pnpm setup:demo and set RUPA_RUNTIME_FILE to its public output.");
+  const agentId = BigInt(process.env.AGENT_ID || manifest.agentId || "0");
+  if (agentId <= 0n) throw new Error("Configure a registered AGENT_ID.");
+  const identityRegistry = manifest.identityRegistry ?? monadTestnetDeployment.identityRegistry;
+  if (!isAddress(identityRegistry)) throw new Error("Invalid identity registry.");
+  const secret = (name: string): Hex => {
+    const value = process.env[name];
+    if (!value || !/^0x[0-9a-fA-F]{64}$/.test(value)) throw new Error(`Configure ${name} in the server environment.`);
+    return value as Hex;
+  };
+  const chain = defineChain({ id: manifest.chainId, name: manifest.chainId === 10143 ? "Monad testnet" : "Rupa local", nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 }, rpcUrls: { default: { http: [process.env.MONAD_RPC_URL || manifest.rpcUrl] } } });
+  const publicClient = createPublicClient({ chain, transport: http() });
+  if (await publicClient.getChainId() !== manifest.chainId) throw new Error("Configured RPC chain does not match deployment.");
+  const agent = createWalletClient({ chain, transport: http(), account: privateKeyToAccount(secret("AGENT_PRIVATE_KEY")) });
+  const mode = process.env.LLM_PROVIDER || "mock";
+  if (mode !== "mock" && mode !== "openai-compatible") throw new Error("LLM_PROVIDER must be mock or openai-compatible.");
+  const provider = mode === "mock" ? mockProvider : httpProvider({ baseUrl: process.env.LLM_BASE_URL || "https://api.openai.com/v1/", apiKey: process.env.LLM_API_KEY || "", model: process.env.LLM_MODEL || "" });
+  if (mode !== "mock" && !process.env.PINATA_JWT) throw new Error("Set PINATA_JWT for live rule publication.");
+  const publish = process.env.PINATA_JWT ? pinataPublisher(process.env.PINATA_JWT) : inlinePublisher;
+  const translationChain = createTranslationChain({ publicClient, walletClient: agent, deployment: manifest, agentId, identityRegistry, ...(process.env.IPFS_GATEWAY ? { gateway: process.env.IPFS_GATEWAY } : {}) });
+  const translator = createTranslator({ chain: translationChain, provider, publish, namespace: `${chain.id}:${manifest.contracts.MappingRegistry}`, types: { [RELIC_TYPE_HASH.toLowerCase()]: RELIC_TYPE } });
+  const admin = process.env.DEMO_ADMIN_PRIVATE_KEY ? createWalletClient({ chain, transport: http(), account: privateKeyToAccount(secret("DEMO_ADMIN_PRIVATE_KEY")) }) : undefined;
+  const funder = process.env.FAUCET_PRIVATE_KEY ? createWalletClient({ chain, transport: http(), account: privateKeyToAccount(secret("FAUCET_PRIVATE_KEY")) }) : undefined;
+  const demo = admin ? createDemoAccess({ origin: manifest.origin, chainId: manifest.chainId, actions: createDemoActions({ publicClient, admin, deployment: manifest, arena: appIds.arena, ...(funder ? { funder } : {}) }) }) : undefined;
+  const app = createAgentApp({ config: { deployment: manifest, apps: appIds, agentId: agentId.toString(), llmMode: mode, faucet: !!funder && !!admin }, translator, ...(demo ? { demo } : {}) });
+  const server = nodeServer(app), port = Number(process.env.AGENT_PORT || "8787");
+  server.on("error", () => { console.error("Agent HTTP server could not start."); process.exitCode = 1; });
+  server.listen(port, process.env.AGENT_HOST || "localhost", () => console.log(`Rupa agent ready on port ${port}; LLM mode: ${mode}.`));
+}
+main().catch(error => { console.error(error instanceof Error && /^(Configure|Register|Invalid identity|LLM_PROVIDER|Set PINATA|Configured RPC)/.test(error.message) ? error.message : "Agent startup failed. Check server configuration and RPC connectivity."); process.exitCode = 1; });
