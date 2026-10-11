@@ -7,5 +7,5 @@
   "files": ["dist"],
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
   "scripts": { "build": "tsc -p tsconfig.build.json" },
-  "dependencies": { "viem": "2.57.4" }
+  "dependencies": { "@rupa/mapping-dsl": "workspace:*", "viem": "2.57.4" }
 }
