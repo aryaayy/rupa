@@ -41,4 +41,12 @@ contract EncodingTest is TestBase {
         );
         assertEq(keccak256(abi.encode(record)), vm.parseJsonBytes32(vector, ".recordId"));
     }
+
+    function testSharedMappingDslCanonicalHash() public view {
+        string memory vector = vm.readFile("test/vectors/dsl-jcs.json");
+        assertEq(
+            keccak256(bytes(vm.parseJsonString(vector, ".canonical"))),
+            vm.parseJsonBytes32(vector, ".contentHash")
+        );
+    }
 }

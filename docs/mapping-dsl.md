@@ -1,6 +1,6 @@
 # Mapping DSL v1
 
-Status: spesifikasi implementasi awal untuk `packages/mapping-dsl`; format dasar dari handoff, rincian evaluator adalah baseline D-09.
+Status: spesifikasi dan implementasi awal `@rupa/mapping-dsl` tersedia; agent/SDK produk belum mengonsumsi paket ini. Format dasar dari handoff, rincian evaluator D-09.
 
 ## Input dan output
 
