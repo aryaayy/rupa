@@ -5,23 +5,34 @@
   "type": "module",
   "license": "MIT",
   "packageManager": "pnpm@10.20.0",
-  "engines": { "node": ">=24.0.0 <25" },
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
   "scripts": {
-    "dev": "vite apps/web --host 127.0.0.1 --port 5173 --strictPort",
+    "dev": "pnpm build:packages && pnpm --filter @rupa/web dev",
+    "dev:agent": "pnpm build:packages && pnpm --filter @rupa/agent build && node --env-file-if-exists=.env services/agent/dist/main.js",
+    "demo": "pnpm build:packages && pnpm --filter @rupa/agent build && forge build --root contracts && node scripts/local-demo.mjs",
+    "setup:demo": "pnpm build:packages && pnpm --filter @rupa/agent build && node --env-file-if-exists=.env scripts/setup-demo.mjs",
+    "build:packages": "pnpm --filter @rupa/sdk... -r build",
     "build": "pnpm -r --if-present build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:contracts": "forge test --root contracts --no-match-path 'test/fork/*'",
     "test:fork": "node scripts/run-fork-tests.mjs",
+    "test:e2e": "pnpm build:packages && pnpm --filter @rupa/agent build && forge build --root contracts && playwright test",
+    "generate:contracts": "forge build --root contracts && node scripts/generate-sdk-contracts.mjs",
     "verify:monad": "node scripts/verify-monad.mjs",
     "check:format": "forge fmt --root contracts --check",
     "check:secrets": "gitleaks dir . --redact --config .gitleaks.toml",
-    "check": "pnpm typecheck && pnpm test && pnpm test:contracts && pnpm check:format"
+    "check": "pnpm build:packages && pnpm typecheck && pnpm test && pnpm test:contracts && pnpm check:format"
   },
   "devDependencies": {
     "@openzeppelin/contracts": "5.6.1",
+    "@playwright/test": "1.63.0",
+    "@rupa/sdk": "workspace:*",
     "@types/node": "26.6.5",
     "typescript": "5.9.3",
+    "viem": "2.57.4",
     "vite": "8.3.4",
     "vitest": "5.0.3"
   }
