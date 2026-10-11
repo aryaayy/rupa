@@ -1,6 +1,7 @@
 # Test vectors
 
-`protocol.json` is a synthetic public encoding vector shared by Solidity and TypeScript. Its addresses are illustrative, not deployment addresses. Regenerate only when intentionally changing the protocol encoding, after building the SDK:
+`protocol.json` is a synthetic public encoding vector shared by Solidity and TypeScript.
+`dsl-jcs.json` is a synthetic RFC 8785 + keccak256 vector shared by `@rupa/mapping-dsl` and Foundry. Its addresses are illustrative, not deployment addresses. Regenerate only when intentionally changing the protocol encoding, after building the SDK:
 
 ```bash
 node scripts/generate-protocol-vector.mjs

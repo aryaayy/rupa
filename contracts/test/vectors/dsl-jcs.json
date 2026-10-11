@@ -1,0 +1,10 @@
+{
+  "source": "synthetic-public-jcs-fixture-not-a-deployment",
+  "object": {
+    "rupa": "mapping/v1",
+    "targetAppId": 2,
+    "assetType": "rupa.weapon.sword"
+  },
+  "canonical": "{\"assetType\":\"rupa.weapon.sword\",\"rupa\":\"mapping/v1\",\"targetAppId\":2}",
+  "contentHash": "0x75b5ca62bfea21c6b002f40d77ee372f43a9d58873a0686d71cc5fa345427497"
+}
