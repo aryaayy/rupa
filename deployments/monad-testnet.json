@@ -1,0 +1,25 @@
+{
+  "network": "monad-testnet",
+  "chainId": 10143,
+  "rpcUrl": "https://testnet-rpc.monad.xyz",
+  "explorerUrl": "https://testnet.monadscan.com",
+  "rpId": "rupa-mu.vercel.app",
+  "origin": "https://rupa-mu.vercel.app",
+  "admin": "0x91b066AAaD3787518350E3b98d365080935c5fC8",
+  "deploymentBlock": null,
+  "contracts": {
+    "AppRegistry": "0xd114Ad7377BAb635ed247482Ea4fF7bD89c2c86a",
+    "RupaAsset": "0x2cC8F81a40cB9e7a9eb8bBBEd6483F17923257a4",
+    "MappingRegistry": "0xC5040F650aBc306E583EB7A74f7d38710fFBfD7d",
+    "PasskeyApprover": "0x50B46B94f13f04aEE158D28202E38C1CEDEfac39",
+    "PortLedger": "0x373ff4Bd8439F837b504870be4B28ca5c677Fc1f"
+  },
+  "identityRegistry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+  "reputationRegistry": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+  "apps": {},
+  "agents": [],
+  "verification": {
+    "source": "User-confirmed deployment, bindings, fork tests, and Windows Hello approval",
+    "transactionHashes": []
+  }
+}

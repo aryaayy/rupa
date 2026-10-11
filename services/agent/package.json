@@ -1,0 +1,5 @@
+{
+  "name": "@rupa/agent", "version": "0.1.0", "private": true, "type": "module", "license": "MIT",
+  "scripts": { "build": "tsc -p tsconfig.build.json", "start": "node dist/main.js" },
+  "dependencies": { "@rupa/sdk": "workspace:*", "@rupa/mapping-dsl": "workspace:*", "viem": "2.57.4" }
+}

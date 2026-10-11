@@ -32,7 +32,7 @@ Ledger menghitung approval hash dari data transaksi dan state terbaru. Approver 
 
 Verifikasi `type=webauthn.get`, challenge tepat 43 karakter base64url tanpa padding untuk 32 bytes, RP hash, UP/UV, deadline, dan P256. Key registration memeriksa COSE kty=2, crv=1, alg=-7 dan coordinate length. DER parser menolak integer malformed; r/s diserialisasi fixed-width dengan benar dan s dinormalisasi.
 
-D-05 diterapkan dengan exact origin dan perbandingan seluruh bytes JSON terhadap urutan `type/challenge/origin`, dengan `crossOrigin:false` opsional. [WebAuthn specification](https://www.w3.org/TR/webauthn-3/#sctn-verifying-assertion) memisahkan origin dari RP ID dan challenge; RP hash saja bukan pengganti origin. Perbandingan penuh menolak nested/duplicate/extra fields dan escaping atau urutan berbeda. Pendekatan ini membatasi browser yang kompatibel; fixture perangkat belum tersedia. Jangan mengeklaim parser WebAuthn umum atau melewati validasi saat layout browser berbeda.
+D-05 diterapkan dengan exact origin dan perbandingan seluruh bytes JSON terhadap urutan `type/challenge/origin`, dengan `crossOrigin:false` opsional. [WebAuthn specification](https://www.w3.org/TR/webauthn-3/#sctn-verifying-assertion) memisahkan origin dari RP ID dan challenge; RP hash saja bukan pengganti origin. Perbandingan penuh menolak nested/duplicate/extra fields dan escaping atau urutan berbeda. Pendekatan ini membatasi browser yang kompatibel. Pengguna telah mengonfirmasi Windows Hello diverifikasi di Monad; layout perangkat/browser lain dan UI baru tetap perlu diuji. Jangan mengeklaim parser WebAuthn umum atau melewati validasi saat layout browser berbeda.
 
 `signCount` tidak dipakai sebagai replay guard karena passkey tersinkron dapat memberikan nilai nol, sebagaimana diantisipasi handoff. Nonce per owner menjadi replay guard aplikasi. Rotation menaikkan nonce, termasuk jika key yang sama didaftarkan ulang. Contract/state changes dalam transaksi yang revert harus rollback termasuk nonce.
 
@@ -58,7 +58,15 @@ IPFS resolver menggunakan gateway yang dikonfigurasi; jangan mengunduh URL arbit
 - Frontend hanya menerima public config; `VITE_`/`NEXT_PUBLIC_` tidak boleh berisi private key, pinning JWT, atau provider key.
 - `.env.example` berisi nilai kosong; `.env*` di-ignore dengan exception template tersebut.
 - Fixture boleh berisi assertion/public key untuk chain/key uji; jangan menyimpan private key atau credential store. Tandai chain/domain/nonce fixture agar replay test dipahami.
-- Jangan memakai wallet bersama dengan private key publik untuk juri. Browser burner bersifat opsional dan memiliki batas saldo/umur yang jelas jika dibangun.
+- Jangan memakai wallet bersama dengan private key publik untuk juri. Browser burner demo sudah diimplementasikan dengan key per-tab di sessionStorage, bukan key bersama atau key service. Script pada origin yang terkena XSS dapat mengakses key; gunakan hanya dana demo.
+
+## Batas operasi implementasi saat ini
+
+Agent memakai Node HTTP satu proses. Login challenge ditandatangani wallet, berumur dua menit dan sekali pakai; session satu jam terikat socket peer. Faucet maksimal 0.01 MON/wallet/process, 3/IP/jam dan 20/global/jam, dengan 1000 wallet records. Mint/use memerlukan kemenangan server-side, maksimal 10/address/jam dan 100 reward/global/jam. Signed wallet bukan anti-sybil; batas global dan saldo faucet kecil membatasi kerugian.
+
+Quotas/cache/session/pending proposal berada dalam memori dan hilang saat restart. Multi-instance/dana lebih besar memerlukan storage dan limit bersama. Forwarded headers tidak dipercaya; reverse proxy dapat menggabungkan IP. CORS exact origin bukan auth. Unknown transaction menyimpan hash dan menahan retry dalam proses; periksa receipt sebelum restart. Setup app/identity menyimpan checkpoint publik di .local sebelum menunggu receipt.
+
+Content reader hanya menerima canonical inline JSON atau IPFS pada gateway terkonfigurasi; HTTP origins lain memerlukan allowlist. Redirect, duplicate JSON keys, payload >64 KiB, unsafe numbers/prototype keys dan semua schema references/regex ditolak. View tetap divalidasi setiap eksekusi. Mock mode tidak memakai IPFS kecuali pinning dikonfigurasi.
 
 ## Emergency response dan disclosure
 

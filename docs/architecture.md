@@ -1,6 +1,6 @@
 # Arsitektur
 
-Status: rancangan MVP. Lihat [decision log](decisions.md) untuk detail yang belum dibekukan.
+Status: arsitektur SDK/DSL/agent dan demo sudah diimplementasikan. M0–M2 dan kontrak live dikonfirmasi pengguna; integrasi hosted belum diuji. Delta dari baseline tercatat di [decision log](decisions.md).
 
 ## Komponen
 
@@ -9,7 +9,7 @@ flowchart LR
   User[Owner wallet dan passkey] --> Web[Web: Arena, Social, Gallery]
   Web --> SDK["@rupa/sdk"]
   SDK --> DSL[Mapping DSL dan validator]
-  SDK --> Agent[Agent Fastify]
+  SDK --> Agent[Agent Node HTTP]
   Agent --> LLM[Provider LLM]
   Agent --> IPFS[IPFS]
   Agent --> Signer[Agent signer]
@@ -105,4 +105,4 @@ Aplikasi demo menjalankan admin mint/use di backend yang mengautentikasi sesi da
 
 ## Topologi yang dituju
 
-Satu web origin HTTPS melayani seluruh route dan passkey. Agent dapat di origin lain dengan CORS yang dibatasi ke origin demo; CORS bukan mekanisme autentikasi. Metadata/mapping berada di IPFS melalui gateway yang dikonfigurasi. Hosting dan domain belum ditetapkan; deployment ditunda. Development memakai fixture/local chain dengan label mock yang jelas, kemudian integration test RPC saat tahap M0/M1 implementasi.
+Satu web origin HTTPS melayani seluruh route dan passkey. Agent dapat di origin lain dengan CORS yang dibatasi ke origin demo; CORS bukan mekanisme autentikasi. Metadata/mapping berada di IPFS melalui gateway yang dikonfigurasi. Domain/RP ID live adalah rupa-mu.vercel.app. Hosting agent dan app/agent registration belum tersedia. Development memakai disposable Anvil dengan identity fixture, mock rules dan verifier P256 nyata secara lokal; core deployment tidak diubah.

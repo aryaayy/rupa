@@ -1,6 +1,6 @@
 # Spesifikasi UX
 
-Status: rancangan pengalaman MVP; tidak ada UI yang telah dibangun. Prioritasnya menunjukkan primitive Rupa bekerja melalui tiga consumer yang mudah dipahami.
+Status: UI Arena, Social, Gallery, Docs dan capture sudah diimplementasikan dengan TypeScript/Vite; browser/hosted verification baru masih gate. Prioritasnya menunjukkan primitive Rupa bekerja melalui tiga consumer yang mudah dipahami.
 
 ## Route dan isi
 
@@ -18,7 +18,7 @@ App ID diperoleh dari deployment manifest; jangan mengunci asumsi bahwa Social s
 
 | State | Tampilan dan aksi |
 | --- | --- |
-| Wallet belum terhubung | CTA connect; baca penjelasan/demo publik tetap tersedia |
+| Wallet belum terhubung | CTA Create demo wallet; baca penjelasan/demo publik tetap tersedia |
 | Network salah | Instruksi pindah ke Monad testnet; tombol transaksi disabled |
 | Wallet tidak punya MON | Link faucet atau demo faucet jika benar-benar tersedia |
 | Belum ada asset | CTA ke Arena; tidak menampilkan aset sample sebagai milik wallet |

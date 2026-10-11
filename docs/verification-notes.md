@@ -1,103 +1,70 @@
 # Verification notes
 
-Tanggal pencatatan awal: **11 Oktober 2026**. Tujuan: memisahkan klaim handoff, konfirmasi dokumentasi, dan bukti runtime. Deployment ditunda sesuai arahan pengguna.
+Updated **11 October 2026**, working tree above `508c88d`. These notes distinguish owner-provided live evidence from checks run during this implementation. No live transaction, deployment, push or local commit was made here.
 
-## Status evidence
+## Owner-confirmed baseline
 
-- `DOC-CHECKED`: isi sumber primer dibaca; belum membuktikan endpoint/deployment aktual bekerja.
-- `PASS`: pemeriksaan executable dijalankan dan hasil/evidence tersedia.
-- `FAIL`: pemeriksaan dijalankan dan gagal, dengan error dicatat.
-- `NOT RUN`: belum dijalankan.
-- `DEFERRED`: sengaja ditunda sesuai tahap kerja.
+The project owner reported M0–M2 complete: all original 42 Foundry tests, fork tests, and a real Windows Hello credential from **https://rupa-mu.vercel.app** verified by `PasskeyApprover.verifyApproval` on Monad testnet. The five deployed addresses, admin/binder, chain 10143 and both completed ledger bindings were supplied explicitly.
 
-## Pemeriksaan awal
+The [manifest](../deployments/monad-testnet.json) records that provenance of the deployment information. Deployment transaction hashes, RupaAsset creation block, browser version and a public Windows Hello fixture were not supplied; none have been invented. The owner also confirmed that demo app IDs and an ERC-8004 agent ID/service URL have **not** been created.
 
-| ID | Pemeriksaan | Status | Hasil / langkah berikutnya |
-| --- | --- | --- | --- |
-| V-01 | Handoff dan isi workspace | PASS | Handoff §0–15 dibaca; sebelum inisialisasi hanya RUPA-HANDOFF.md sebagai file proyek yang terlihat; tidak ada package/source/test |
-| V-02 | Local Git usable | PASS | Setelah diinisialisasi pengguna, `main` melacak `origin/main`; HEAD `fccb687 docs: initialize project documentation`. Development lokal belum di-commit/push. Kegagalan awal sebelum init sudah teratasi |
-| V-03 | Alamat testnet Identity/Reputation di upstream | DOC-CHECKED | Repository resmi mencantumkan alamat sama dengan handoff; bytecode/ABI runtime belum diperiksa |
-| V-04 | ABI yang benar-benar terpasang | NOT RUN | Ambil ABI pada upstream commit, cocokkan proxy/implementation explorer, catat hash/revision dan eth_call probe |
-| V-05 | RPC chain ID dan bytecode registry | FAIL | Terminal tidak dapat resolve RPC; `MONAD_RPC_URL=https://testnet-rpc.monad.xyz node scripts/verify-monad.mjs` berhenti `FAIL: fetch failed` sebelum memperoleh chain/block. Tidak ada konfirmasi runtime |
-| V-06 | ValidationRegistry candidate | NOT RUN | Candidate handoff belum diuji; guide resmi menyebut coming soon; opsional/cut pertama |
-| V-07 | P256 precompile live valid/invalid vector | NOT RUN | Script berisi known-good/invalid vector; network check V-05 gagal sebelum native precompile dipanggil |
-| V-08 | Crypto P256 lokal | PASS | OpenZeppelin 5.6.1 `verifySolidity` di-etch di `0x0100`; Foundry menggunakan P256 signatures nyata. Ini tidak membuktikan native precompile atau kompatibilitas perangkat |
-| V-09 | Browser WebAuthn ≥1 platform, target 3 | NOT RUN | Capture app build lulus; sandbox menolak bind server `EPERM 127.0.0.1:5173`. Belum ada fixture authenticator/browser |
-| V-10 | Royalty/hash/origin implementation | PASS | D-05/D-06/D-08/D-10 diterapkan dan diuji lokal; compatibility browser, domain, fee/penerima deployment belum final |
-| V-11 | Rupa deploy, agent register, hosting | DEFERRED | Arahan pengguna: deployment nanti saja |
-| V-12 | Unit/fuzz/integration lokal | PASS | 42 tests Foundry + 16 tests SDK, typecheck, SDK/web build, formatting lulus. CI GitHub, fork, E2E perangkat, dan gitleaks belum dijalankan |
-| V-13 | Deadline resmi dan remote repo access | NOT RUN | Tanggal handoff 13 Oktober 2026; jam/timezone dan visibility repo belum dibuktikan |
-| V-14 | Struktur paket dokumentasi | PASS | Pemeriksaan terbaru mencakup 25 file Markdown: tautan lokal, code fences, dan newline lulus. `git diff --check`, env template kosong, serta ignore dependency/build output juga lulus; bukan pengganti secret scan |
-| V-15 | pnpm bootstrap dan lockfile | FAIL | pnpm tidak tersedia; registry npm gagal DNS (`EAI_AGAIN`), offline install tidak memiliki metadata lengkap (`ENOTCACHED`). Tidak ada lockfile atau bukti clean install |
+## Executed checks for this working tree
 
-## Evidence development lokal
+| Check | Result | Evidence / limitation |
+| --- | --- | --- |
+| `pnpm check` | PASS | Package compilation, strict typecheck, **57 TypeScript tests in 9 files**, **45 Foundry tests**, Solidity formatting |
+| Original contract suite | PASS | Original 42 tests unchanged, including 256 challenge fuzz runs |
+| Deploy script rehearsal | PASS | Three new tests: both bindings/configuration, protected existing testnet, unsupported chain |
+| `pnpm build` | PASS | DSL, SDK JS/declarations, Node service, web production bundle; Vite transformed 970 modules |
+| Required filtered Vercel build | PASS | `pnpm --filter @rupa/web build` rerun after the final UI/E2E timing fix; strict typecheck also passes |
+| `pnpm exec playwright test --list` | PASS | Two tests discovered; this does not execute a browser |
+| `pnpm test:e2e` | BLOCKED / failed startup | Package/service/contract build succeeds; webServer exits 1 before browser assertions |
+| Direct Anvil startup | BLOCKED | `anvil --port 8545 --chain-id 31337 --hardfork cancun --silent` returns `Operation not permitted (os error 1)` |
+| `MONAD_RPC_URL=https://testnet-rpc.monad.xyz pnpm test:fork` | BLOCKED / failed RPC | Could not retrieve chain ID: DNS lookup temporary failure; no fork test passed in this rerun |
+| `pnpm check:secrets` | BLOCKED | `gitleaks: not found`; no substitute scan is claimed as gitleaks |
+| New script syntax | PASS | node --check for local-demo, setup-demo and ABI generator |
+| Markdown/env checks | PASS | All 27 Markdown files: local links, balanced fences, newline; all .env.example values empty |
+| `git diff --check` | PASS | No whitespace errors |
+| Contract/passkey preservation | PASS | No diff in contracts/src, SDK passkey/approval/provenance helpers, or original handoff |
+| Local branch/commits | BLOCKED | git switch -c feat/sdk-port cannot write .git/refs; metadata is read-only |
+| Fresh install / GitHub CI | NOT RUN | Lockfile updated from cached registry metadata; no clean online install or remote CI result |
+| Live agent/IPFS/provider and new UI rollout | NOT RUN | Configuration and real registration are still outstanding |
 
-Tanggal: 11 Oktober 2026. Revision: working tree di atas `fccb687`; perubahan belum di-commit. Runtime Node **24.21.0**, Foundry **1.8.4** (`50af4efe189dc64bad2b75ed6990b835de66c4ae`), Solidity **0.8.24**, EVM Cancun. Versi dependency terpasang diperiksa dari package metadata: TypeScript 5.9.3, viem 2.57.4, OpenZeppelin Contracts 5.6.1, Vite 8.3.4, Vitest 5.0.3, @types/node 26.6.5.
+Foundry build emits existing lint advisories; successful tests are not an audit. The web build warns about its 504.88 kB main chunk (149.57 kB gzip); code splitting remains a performance follow-up. No blocking bug was found in the frozen core contracts.
 
-Karena pnpm/registry tidak terjangkau, executable dan dependency TypeScript memakai symlink ke cache proyek lokal yang sudah ada; OpenZeppelin disalin ke `node_modules` lokal agar compiler dapat mengaksesnya. Seluruh dependency/build output di-ignore. Ini menyediakan evidence source dan dependency versi tersebut bekerja bersama, **bukan** bukti `pnpm install --frozen-lockfile` atau supply-chain verification. pnpm 10.20.0 baru target yang dipin pada manifest.
+## New coverage
 
-| Command yang benar-benar dijalankan | Hasil |
-| --- | --- |
-| `forge build --root contracts --offline` | PASS; compiler 0.8.24; lint advisory Foundry bukan audit keamanan |
-| `npm run test:contracts` | PASS; 23 approver + 17 core integration + 2 encoding = 42 tests; fuzz wrong challenge 256 runs |
-| `npm run typecheck` | PASS; strict TypeScript |
-| `npm test` | PASS; 16 tests pada 3 file |
-| `node node_modules/typescript/bin/tsc -p packages/sdk/tsconfig.build.json` | PASS; SDK JavaScript + declarations |
-| `node node_modules/vite/bin/vite.js build apps/web` | PASS; 431 modules; capture app bundle 21.74 kB JS / 9.00 kB gzip |
-| `npm run check:format` | PASS; `forge fmt --root contracts --check` |
-| `node scripts/run-fork-tests.mjs` tanpa RPC env | Exit 1, `NOT RUN`; suite fork tidak dijalankan |
-| `node scripts/verify-monad.mjs` tanpa RPC env | Exit 1, `NOT RUN`; tidak ada fallback mock |
-| `MONAD_RPC_URL=https://testnet-rpc.monad.xyz node scripts/verify-monad.mjs` | FAIL sebelum chain/block; fetch tidak berhasil |
+- SDK: ownership-filtered discovery, deduplicated events, current mapping/schema/revocation checks, previous-owner labels, hash-chain verification, cache/request paths, cancellation, nonce/schema races, exact fees, transaction and agent-proposal unknown outcomes with hashes.
+- Content: canonical byte/hash verification, immutable cached reads, bounded streams, unsafe origin/redirect/duplicate JSON rejection.
+- DSL: canonical sorting/number rules, operator/path restrictions, required/default fields, output caps, URI/tier invariants, Ajv profile, all rarity levels and deterministic 300-case fuzzing.
+- Agent: ten type/schema pairs, reusable rules, deduplication/cache, three injection classes rejected before signing, schema-change handling, registration/proposal transaction reconciliation.
+- Access: signed challenge expiry/replay/wrong signer, peer-bound sessions, one-use duel rewards, faucet per-wallet/per-IP/global limits, CORS, malformed/oversized input, forwarded-header spoof resistance, redacted errors.
 
-`pnpm check` dan workspace `pnpm build` belum dapat dijalankan; command komponennya di atas dijalankan langsung. Workflow CI dan hook pre-commit sudah tersedia, tetapi CI GitHub/gitleaks belum dijalankan dan hook belum dipasang ke config Git. Jangan menyamakan pemeriksaan env template kosong dengan secret scan lengkap.
+Mock-client tests do not prove the live ERC-8004 registration interface or provider account settings work. The browser suite uses an actual CDP virtual authenticator, a local identity fixture and a Solidity verifier performing real P256 math; it has not yet reached browser execution here.
 
-Bukti kontrak mencakup approval binding/replay/deadline/origin/flags, actual local P256 math, malformed precompile return, rotation nonce, ownership tetap setelah port, mapping schema/revoke, provenance chain, royalti dan sisa fee, atomic rollback, serta reentrancy. Identity registry masih mock; ERC-1271 tersedia melalui SignatureChecker tetapi belum diuji dalam suite khusus. Encoding fixture `contracts/test/vectors/protocol.json` dibaca Solidity dan TypeScript. SDK tests mencakup DER signatures OpenSSL nyata, malformed DER/COSE/client JSON, BOM rejection, approval domain fields, dan provenance tampering.
+## Dependencies and reproducibility
 
-Gate berikutnya: lockfile + clean install, upstream ABI/revision verification, direct Monad `eth_call`, capture perangkat, lalu integrasi SDK/DSL/agent. Fork Foundry hanya membuktikan akses chain state dan perilaku EVM lokal; native precompile memerlukan direct RPC checks. Tidak ada deployment/registrasi agent/transfer testnet dalam pekerjaan ini.
+Runtime: Node 24.21.0, pnpm 10.20.0, Foundry 1.8.4, solc 0.8.24/Cancun. Dependency manifests pin TypeScript 5.9.3, viem 2.57.4, OpenZeppelin 5.6.1, Vite 8.3.4, Vitest 5.0.3, Ajv 8.20.0 and Playwright 1.63.0.
 
-## Sumber primer yang dibaca
+The sandbox cannot resolve external npm hosts. Existing installed dependencies came from matching local cached packages; Ajv/Playwright were installed offline into temporary directories and linked for validation. The lockfile was generated by pnpm using copied cache metadata, contains normal registry integrities/workspace links, and contains no temporary machine paths. This is evidence of component compatibility, not a clean-install proof. CI now requires frozen installation.
 
-Sumber berikut dibaca pada 11 Oktober 2026 melalui web. ABI artifact dan source revision ERC-8004 belum dipin terhadap deployment runtime.
+## Next evidence to collect
 
-1. [Monad precompiles](https://docs.monad.xyz/developer-essentials/precompiles): mendokumentasikan P256 `0x0100`, 160-byte input, valid return 32-byte one dan invalid empty return. Ini bukan hasil test vector Rupa.
-2. [ERC-8004 contracts repository](https://github.com/erc-8004/erc-8004-contracts): bagian Monad Testnet mencantumkan Identity `0x8004A818BFB912233c491871b3d84c89A494BD9e` dan Reputation `0x8004B663056A597Dffe9eCcC1965A193B7388713`; direktori `abis/` tersedia. Daftar alamat tidak membuktikan kecocokan bytecode/ABI proxy saat ini.
-3. [Monad ERC-8004 guide](https://docs.monad.xyz/guides/erc-8004): Validation Registry disebut coming soon. Jangan menjadikan candidate address dependency MVP sebelum diverifikasi.
-4. [ERC-8004 specification](https://eips.ethereum.org/EIPS/eip-8004): dibaca untuk wallet agent/feedback. Agent wallet dapat direset saat transfer; self-feedback oleh owner/operator dibatasi. Signature final tetap diambil dari ABI deployment, bukan perkiraan berdasarkan teks spec.
-5. [WebAuthn verification](https://www.w3.org/TR/webauthn-3/#sctn-verifying-assertion): origin, challenge, dan RP hash merupakan pemeriksaan terpisah. D-05 menerapkan exact serialization terbatas; dukungan browser harus dibuktikan, bukan disimpulkan dari spesifikasi.
-6. [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785): referensi canonicalization JSON untuk content hash; library dan fixture JCS belum diimplementasikan.
+1. Install normally, run checks/build, Chromium E2E, fork and gitleaks in a network/socket-capable environment.
+2. Review and create focused local commits with the required human author/committer. Do not push in this task.
+3. Record the existing deployment's public receipt hashes and creation block; verify getter configuration without changing contracts.
+4. Choose agent host/provider/pinning settings, register actual apps/identity with separate demo wallets, then run a live proposal and both ports.
+5. Preserve the original Windows Hello proof and add the new UI flow, cancellation/recovery and additional device evidence.
+6. Measure the clean consumer quickstart and hosted latency. Complete submission material separately.
 
-## Prosedur live M0 yang masih perlu berhasil
+## Primary references
 
-Perintah read-only berikut memerlukan akses jaringan yang berfungsi; jangan mencatatnya sebagai PASS sebelum output nyata ada:
+- [Monad precompiles](https://docs.monad.xyz/developer-essentials/precompiles): native P256 behavior; a Solidity verifier or fork does not independently prove native RPC execution.
+- [ERC-8004 repository](https://github.com/erc-8004/erc-8004-contracts) and [specification](https://eips.ethereum.org/EIPS/eip-8004): identity/wallet/registration interfaces. Upstream addresses agree with the supplied manifest; a source revision and new registration smoke remain to be recorded.
+- [WebAuthn verification](https://www.w3.org/TR/webauthn-3/#sctn-verifying-assertion): RP, origin, challenge and signature checks. Rupa intentionally supports a restricted clientDataJSON serialization.
+- [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785): canonical JSON; the implemented bounded profile further rejects unsafe integers and unsafe object keys.
+- [Ajv JSON Schema](https://ajv.js.org/json-schema.html), [OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat), [Pinata file upload](https://docs.pinata.cloud/api-reference/endpoint/ipfs/pin-file-to-ipfs), [CDP WebAuthn](https://chromedevtools.github.io/devtools-protocol/tot/WebAuthn/): adapter/interpreter/test references, not evidence of live service success.
 
-```bash
-RUPA_RPC_URL=https://testnet-rpc.monad.xyz
-cast chain-id --rpc-url "$RUPA_RPC_URL"
-cast code 0x8004A818BFB912233c491871b3d84c89A494BD9e --rpc-url "$RUPA_RPC_URL"
-cast code 0x8004B663056A597Dffe9eCcC1965A193B7388713 --rpc-url "$RUPA_RPC_URL"
-cast code 0x8004Cb1BF31DAf7788923b405b754f57acEB4272 --rpc-url "$RUPA_RPC_URL"
-```
+## Historical context
 
-Expected chain ID menurut handoff adalah 10143; registry utama harus memiliki code. Validation candidate boleh dilewati bila kosong/tidak tersedia. Code kosong di `0x0100` bukan pemeriksaan dukungan precompile.
-
-Untuk P256, siapkan input valid dengan known public key/signature, lalu invalid vector yang terkontrol; kirim `eth_call`/cast call ke `0x0100` dan simpan raw return, block, RPC, tool version. Setelah itu jalankan fixture WebAuthn melalui verifier penuh untuk membuktikan challenge/flags/nonce, bukan hanya kurva P256.
-
-Untuk ABI, catat upstream repository commit, path/file checksum, deployment address, implementation bila proxy, selectors yang digunakan, serta hasil calls nyata. Periksa register overload, getAgentWallet behavior, feedback/getSummary, dan self-feedback restriction. Jangan menganggap daftar fungsi handoff otomatis cocok deployment.
-
-## Format record evidence
-
-```text
-ID / requirement:
-Tanggal dan pelaksana:
-Revision proyek / upstream:
-Environment, tool version, browser/device:
-Chain, block number/hash, RPC publik tanpa token:
-Command atau prosedur:
-Expected:
-Observed:
-Status: PASS | FAIL | NOT RUN | DEFERRED
-Artefak aman / txHash:
-Keterbatasan dan tindak lanjut:
-```
-
-Evidence tidak menyimpan secrets, private key, credential storage, atau prompt dengan data personal. Status milestone diperbarui setelah evidence diperiksa; dokumentasi resmi dan mock tests tetap diberi label yang sesuai.
+Before the owner's deployment update, the scaffold had 42 local Foundry and 16 SDK tests, no live browser evidence available in this workspace, and earlier pnpm/network bootstrap failures. Those initial limitations are superseded only where the current evidence above says so. In particular, the owner's successful fork/Windows Hello report is retained separately from this environment's failed rerun.

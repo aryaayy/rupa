@@ -2,75 +2,75 @@
 
 **One asset. Every form.**
 
-Rupa membuat makna aset dapat digunakan lintas aplikasi: agent menyusun aturan mapping, pemilik menyetujui aktivasi dengan passkey, dan Monad menyimpan provenance. Kepemilikan aset tetap pada pemiliknya.
+Rupa makes an asset usable across apps without transferring ownership. An agent proposes reusable mapping rules, the owner approves with a passkey, and Monad records the provenance. Arena, Social, and Gallery demonstrate the protocol through a relic, a profile badge, and an artwork.
 
-## Akses juri
+## Current state
 
-**Status 11 Oktober 2026: development lokal berjalan.** Lima kontrak inti, helper SDK passkey/provenance, dan halaman capture passkey tersedia. Produk lengkap dan deployment belum tersedia.
+The five contracts are deployed on **Monad testnet (10143)**. The project owner confirmed M0–M2, fork tests, and a real Windows Hello assertion verified through `PasskeyApprover.verifyApproval` on [rupa-mu.vercel.app](https://rupa-mu.vercel.app). The existing contracts and passkey serialization have been preserved.
 
-Sesuai arahan pengguna, deployment dikerjakan nanti; tahap ini menyiapkan dasar development lokal.
+The repository now includes the SDK integration, shared mapping interpreter, Node agent service, demo routes, and a Playwright flow with a virtual authenticator. **The new full demo has not been deployed or verified end to end here.** Arena/Social/Gallery app IDs and an ERC-8004 agent ID/service URL have not been registered on the live deployment. The setup command records real IDs; none are fabricated.
 
-| Kebutuhan | Status |
+| Contract | Monad testnet address |
 | --- | --- |
-| Live demo, satu origin untuk `/arena`, `/social`, `/gallery`, `/docs` | TBD — domain final diperlukan |
-| Network tujuan | Monad testnet, chain ID `10143` menurut handoff; pemeriksaan RPC menunggu M0 |
-| Kontrak Rupa dan agent ID | Belum tersedia; lihat [kontrak](docs/contracts.md) |
-| Wallet juri | Wallet milik juri; passkey dibuat pada perangkat sendiri |
-| Pendanaan testnet | [Faucet Monad](https://faucet.monad.xyz); demo faucet masih rencana |
-| Instruksi demo dan troubleshooting | [Judge guide](docs/judge-guide.md) |
-| Repository tujuan | `aryaayy/rupa`; keberadaan dan akses publik belum diverifikasi |
+| AppRegistry | `0xd114Ad7377BAb635ed247482Ea4fF7bD89c2c86a` |
+| RupaAsset | `0x2cC8F81a40cB9e7a9eb8bBBEd6483F17923257a4` |
+| MappingRegistry | `0xC5040F650aBc306E583EB7A74f7d38710fFBfD7d` |
+| PasskeyApprover | `0x50B46B94f13f04aEE158D28202E38C1CEDEfac39` |
+| PortLedger | `0x373ff4Bd8439F837b504870be4B28ca5c677Fc1f` |
 
-## Produk
+The [deployment manifest](deployments/monad-testnet.json) is exported as `monadTestnetDeployment` from `@rupa/sdk`. Both ledger bindings are already configured. RP ID is `rupa-mu.vercel.app`; origin is `https://rupa-mu.vercel.app`. Do not redeploy or rebind these contracts.
 
-Target pengguna awal adalah developer game web3 indie di Monad, aplikasi komunitas/badge, dan galeri NFT. Integrasi manual membutuhkan aturan untuk banyak pasangan aplikasi. Rupa menawarkan registry terbuka, mapping yang dapat dipakai ulang, dan SDK `@rupa/sdk` agar aplikasi dapat membaca serta mengaktifkan aset melalui API yang kecil.
+## Run locally
 
-Demo yang direncanakan: Fire Sword dari Arena menjadi frame profil di Social dan kartu koleksi di Gallery. LLM menghasilkan **aturan**, bukan hasil per aset. Aturan dieksekusi deterministik terhadap atribut dan riwayat aset.
-
-## Mulai development
-
-1. Baca [handoff asli](RUPA-HANDOFF.md) dan [hasil telaah](docs/handoff-review.md).
-2. Gunakan [PRD](docs/prd.md), [arsitektur](docs/architecture.md), dan [keputusan](docs/decisions.md) sebagai dasar implementasi.
-3. Lanjutkan [backlog M0–M2](docs/backlog.md): lockfile/CI, bukti browser/testnet, dan kelengkapan negative tests masih perlu ditutup.
-4. Ikuti [panduan development](docs/development.md), [kontribusi](CONTRIBUTING.md), dan [rencana pengujian](docs/test-plan.md).
-
-[Indeks dokumentasi](docs/README.md) memuat seluruh spesifikasi. Helper SDK yang tersedia mencakup approval hash, DER/COSE parsing, browser credential capture, dan verifikasi provenance. API `createRupa/getAssetsFor/port`, mapping DSL, agent service, serta consumer demo masih dalam backlog.
-
-Dengan akses registry npm dan Foundry tersedia:
+Requires Node 24, pnpm 10.20.0, Foundry 1.8.4, and Chromium for E2E.
 
 ```bash
-corepack enable
-pnpm install
+pnpm install --frozen-lockfile
+pnpm demo
+```
+
+Open **http://localhost:5173/arena**. Create a demo wallet, request local MON, win the three-move duel, mint the relic, and register a passkey. Bring it to Social and Gallery and approve each port. Another Arena victory records a WIN; Social's title then changes without another model request.
+
+`pnpm demo` starts a disposable Anvil chain, deploys unchanged contract sources locally, uses an identity fixture and mock LLM, and runs real local transactions with a Solidity P256 verifier. It never writes to Monad. No provider key is required. The browser stores a temporary burner key in this tab's session storage; use only demo funds. Use **localhost**, because passkeys reject IP hosts.
+
+`pnpm dev` starts only the web app. `pnpm dev:agent` runs the configured agent using `.env`. `/docs` and `/capture` remain accessible without the demo backend. For live app/agent registration and service configuration, follow the [deployment runbook](docs/deployment.md).
+
+## Develop and verify
+
+```bash
 pnpm check
 pnpm build
-pnpm dev
+pnpm exec playwright install chromium
+pnpm test:e2e
+MONAD_RPC_URL=https://testnet-rpc.monad.xyz pnpm test:fork
+pnpm check:secrets
 ```
 
-`pnpm dev` membuka alat capture passkey pada `http://localhost:5173`; belum merupakan demo Arena/Social/Gallery. Instalasi pertama perlu menghasilkan dan meninjau `pnpm-lock.yaml`: pnpm/registry tidak dapat diakses dari sandbox saat bootstrap, sehingga lockfile belum dibuat. Pengujian lokal memakai dependency dari cache dengan versi yang dicatat di [verification notes](docs/verification-notes.md).
+Evidence and remaining gates are recorded in [verification notes](docs/verification-notes.md). This environment cannot bind Anvil's port or resolve the Monad RPC, and has no `gitleaks` executable. E2E, fork reruns, and secret scanning therefore remain unverified here. Dependency versions are locked; a fresh network install and GitHub CI still need to run.
 
-Hasil lokal: **42 test Foundry**, termasuk fuzz 256 kasus, **16 test SDK**, typecheck, build SDK, dan build web lulus. Testnet, perangkat browser, clean install pnpm, CI GitHub, dan gitleaks belum tervalidasi. Sandbox menolak DNS eksternal serta bind port server browser.
+Vercel: Node **24**, install `pnpm install`, build `pnpm --filter @rupa/web build`, output `apps/web/dist`. `vercel.json` includes SPA rewrites. Configure public `VITE_AGENT_URL` after the agent is hosted; server secrets never belong in frontend variables.
 
-## Kontribusi
+## Integration and structure
 
-Semua kontributor manusia dapat berkontribusi ke `github.com/aryaayy/rupa` melalui push atau pull request sesuai hak akses repository, memakai identitas Git masing-masing. Agent AI seperti Codex, Cursor, Claude, dan sejenisnya tidak dicantumkan sebagai contributor, author, committer, atau co-author. Lihat [panduan kontribusi](CONTRIBUTING.md).
-
-## Struktur saat ini
+- [SDK README and examples](packages/sdk/README.md): asset discovery, port approval, and verified event provenance.
+- [Agent README](services/agent/README.md): mock/live providers, validation, signing, cache, and HTTP endpoints.
+- [Development guide](docs/development.md), [judge guide](docs/judge-guide.md), and [documentation index](docs/README.md).
+- [Original handoff](RUPA-HANDOFF.md), [PRD](docs/prd.md), and [decisions](docs/decisions.md).
 
 ```text
-contracts/            Lima kontrak Rupa, unit/integration tests, suite fork terpisah
-packages/sdk/         Helper @rupa/sdk: approval, passkey, provenance
-apps/web/             Vite: alat capture passkey lokal
-scripts/              Vector generation, fork runner, direct RPC verification
-docs/                 Spesifikasi, runbook, bukti verifikasi
+contracts/             Five contracts, deploy rehearsal, unit/fuzz/fork tests
+deployments/           Public live manifest; no keys
+packages/mapping-dsl/  Bounded deterministic interpreter and schema validator
+packages/sdk/          viem client, WebAuthn, content verification and provenance
+services/agent/        Rule generation, publication, proposal and demo backend
+apps/web/              Arena, Social, Gallery, Docs and original capture tool
+tests/e2e/             Chromium CDP WebAuthn flow on disposable Anvil
 ```
 
-Toolchain awal: Node 24.21.0, pnpm 10.20.0 (target instalasi), TypeScript 5.9.3, Solidity 0.8.24, Foundry 1.8.4, dan OpenZeppelin 5.6.1. Package DSL, service agent Fastify, consumer React, serta deployment script/manifest menyusul sesuai milestone.
+Reputation ranking, a second agent, external NFT wrapping, and npm publication remain outside this implementation. Mock rules use canonical inline JSON; the live provider adapter requires IPFS pinning. See [operational boundaries](docs/security.md) before exposing the demo service publicly.
 
-## Batasan dan status
+## Contributions
 
-- Hasil test lokal tersedia; alamat deployment, live URL, publikasi npm, dan integrasi pihak ketiga belum tersedia.
-- M0 harus membuktikan ABI registry dan perilaku precompile pada RPC; pembacaan dokumentasi resmi dicatat terpisah di [verification notes](docs/verification-notes.md).
-- RP ID/domain, provider/model LLM, pinning IPFS, dan hosting agent menunggu keputusan pemilik proyek.
-- Fallback raw P256 hanya boleh dipresentasikan sebagai raw P256, bukan WebAuthn passkey; lihat [security](docs/security.md).
-- BTX hanya roadmap sesuai handoff. Wrapper NFT, agent kedua, dan royalty mengikuti urutan pengurangan scope.
+All human contributors may contribute through pushes or pull requests according to repository access. Tools are not listed as contributors, authors, committers, or co-authors. Follow [CONTRIBUTING](CONTRIBUTING.md) and Conventional Commits. This development task must remain local for review; no push is authorized.
 
-Lisensi [MIT](LICENSE). Target submission menurut handoff adalah **13 Oktober 2026**; jam dan zona waktu penutupan belum diketahui.
+Licensed under [MIT](LICENSE).

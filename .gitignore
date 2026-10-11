@@ -8,6 +8,8 @@ contracts/cache/
 contracts/broadcast/
 .pnpm-store/
 .local/
+playwright-report/
+test-results/
 *.log
 *.tsbuildinfo
 .DS_Store

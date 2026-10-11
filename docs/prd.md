@@ -1,8 +1,8 @@
 # Product Requirements Document
 
-Versi 0.1 · 11 Oktober 2026 · Status: baseline MVP; fondasi kontrak/helper SDK diimplementasikan dan diuji lokal, integrasi produk belum lengkap. Lihat [backlog](backlog.md).
+Versi 0.2 · 11 Oktober 2026 · Status: kontrak live dan M0–M2 dikonfirmasi pengguna; SDK/DSL/agent/consumer diimplementasikan, integrasi hosted dan E2E baru masih gate. Lihat [backlog](backlog.md).
 
-Sumber: [handoff](../RUPA-HANDOFF.md). Ambiguitas: [telaah](handoff-review.md). Keputusan teknis tambahan: [decision log](decisions.md). Deployment ditunda sesuai arahan pengguna; requirement deployment di bawah adalah target tahap berikutnya.
+Sumber: [handoff](../RUPA-HANDOFF.md). Ambiguitas: [telaah](handoff-review.md). Keputusan teknis tambahan: [decision log](decisions.md). Gunakan deployment existing di manifest; jangan redeploy. App/agent registration dan hosting service masih perlu dilakukan. Requirement berikut adalah baseline produk; delta scope D-07/D-15 tercatat di decision log.
 
 ## Masalah dan proposisi nilai
 
@@ -38,8 +38,8 @@ Di luar MVP: bridge/cross-chain transfer, marketplace perdagangan, mainnet, gene
 | FR-05 | P0 | Mapping rules oleh agent teridentifikasi | Minimal satu agent ERC-8004; validasi DSL/schema/invariant sebelum signing; invalid output berhenti setelah retry terbatas |
 | FR-06 | P0 | Proposal, activation, revoke, cache | Mapping sesuai schema current; agent signature diperiksa; reuse pasangan yang sama tidak memanggil LLM; revoke/stale tidak dapat digunakan untuk port baru |
 | FR-07 | P0 | Port dan provenance | Setiap port valid menghasilkan record berantai; SDK memverifikasi terhadap head; live owner menyetujui, sender boleh relayer |
-| FR-08 | P0 | SDK kecil dan typed errors | `createRupa`, `getAssetsFor`, `port`, `getProvenance`, passkey register, interpreter dan admin helpers mempunyai types dan tests |
-| FR-09 | P0 | Demo consumer pada satu origin | Arena mint/use, Social frame, Gallery card, route docs; tidak membuat passkey berbeda per path |
+| FR-08 | P0 | SDK kecil dan typed errors | `createRupa`, `getAssetsFor`, `port`, `getProvenance`, passkey register dan interpreter mempunyai types/tests; admin adapters tersedia di service/ABI |
+| FR-09 | P0 | Demo consumer pada satu origin | Arena mint/use, Social badge, Gallery artwork, route docs; tidak membuat passkey berbeda per path |
 | FR-10 | P0 | View diperbarui dari history | `Used(WIN)` yang sah mengubah title setelah refresh/refetch tanpa mapping/LLM baru; riwayat port lama tetap sama |
 | FR-11 | P0 | DX dan akses juri | README menampilkan status/live link, instruksi wallet/passkey, contract/agent data nyata; quickstart dapat diuji dari consumer bersih setelah SDK tersedia |
 | FR-12 | P1 | Reputasi agent | Target app admin memberi feedback; sumber evaluator ditampilkan; SDK dapat memilih kandidat eligible berdasarkan score |
@@ -100,4 +100,4 @@ Prioritas mengikuti bobot rubric yang dicantumkan handoff; ketentuan penyelengga
 
 ## Release gate
 
-Checklist handoff §14 tetap acuan akhir. Selain itu, tidak boleh ada kegagalan terbuka pada signature/replay, kontrol akses, validasi mapping, atau kebocoran secret. Milestone deployment dan publikasi dikerjakan kemudian sesuai arahan pengguna. Persiapan dokumen ini tidak menyatakan proyek siap submit.
+Checklist handoff §14 tetap acuan akhir. Selain itu, tidak boleh ada kegagalan terbuka pada signature/replay, kontrol akses, validasi mapping, atau kebocoran secret. Deployment kontrak existing dipertahankan; rollout UI/agent dan publikasi belum dilakukan. Persiapan dokumen ini tidak menyatakan proyek siap submit.
