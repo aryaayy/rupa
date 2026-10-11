@@ -1,34 +1,34 @@
 # Backlog development
 
-Tanggal baseline: 11 Oktober 2026. Status: `DONE` hanya untuk dokumentasi awal; `TODO` belum dikerjakan; `DEFERRED` menunggu tahap deployment sesuai arahan pengguna. Owner implementasi belum dibagi. Estimasi dan urutan milestone ada di [implementation plan](implementation-plan.md).
+Tanggal baseline: 11 Oktober 2026. Status: `DONE` memenuhi acceptance; `IN PROGRESS` sudah ada implementasi tetapi gate belum lengkap; `TODO` belum dikerjakan; `DEFERRED` menunggu tahap deployment sesuai arahan pengguna. Estimasi dan urutan milestone ada di [implementation plan](implementation-plan.md). Bukti lokal saat ini: 42 test Foundry dan 16 test SDK lulus; lihat [verification notes](verification-notes.md).
 
 ## Bootstrap dan risiko utama
 
 | ID | Status | Task | Dependency | Acceptance / evidence |
 | --- | --- | --- | --- | --- |
 | M0-00 | DONE | Telaah handoff dan siapkan dokumen development | Handoff | PRD, spesifikasi, decision log, backlog, runbook; pemeriksaan tautan lokal |
-| M0-01 | TODO | Scaffold pnpm monorepo, TS, Foundry, app shell | M0-00 | Package boundaries sesuai arsitektur; versi runtime/deps pinned; install/build dasar berfungsi |
-| M0-02 | TODO | Git hygiene, MIT license, ignore, empty env template | M0-00 | Tidak ada secret; identitas setiap kontributor manusia sesuai D-14, tanpa atribusi contributor agent AI; remote tidak dibuat otomatis |
-| M0-03 | TODO | CI dan pre-commit secret scan | M0-01/02 | Workflow menjalankan command nyata; unit/build/scan dapat direproduksi |
-| M0-04 | TODO | Verifikasi RPC, bytecode/ABI registry, P256 vectors, local support | M0-01 | V-04–V-08 di verification notes mempunyai hasil, source revision/block |
-| M1-01 | TODO | Browser registration/assertion capture + DER/COSE parsing | M0-01 | Fixture ≥1 platform; format public key/challenge benar |
-| M1-02 | TODO | Approver, WebAuthnLib, Base64Url, ledger harness | M0-04, M1-01 | T-AUTH-01–08; parser/origin policy D-05 dikunci |
+| M0-01 | IN PROGRESS | Scaffold pnpm monorepo, TS, Foundry, app shell | M0-00 | Manifest/source dan build lokal tersedia; lockfile dan clean pnpm install tertahan akses npm |
+| M0-02 | IN PROGRESS | Git hygiene, MIT license, ignore, empty env template | M0-00 | License/ignore/env tersedia; repo sudah diinisialisasi pengguna; secret scan belum dijalankan |
+| M0-03 | IN PROGRESS | CI dan pre-commit secret scan | M0-01/02 | Workflow dan hook tersedia; CI belum berjalan, gitleaks belum tersedia, hook belum diaktifkan |
+| M0-04 | IN PROGRESS | Verifikasi RPC, bytecode/ABI registry, P256 vectors, local support | M0-01 | Verifier Solidity lokal lulus; direct RPC/fork scripts tersedia, live call tertahan DNS; ABI upstream belum dipin |
+| M1-01 | IN PROGRESS | Browser registration/assertion capture + DER/COSE parsing | M0-01 | Helper dan capture app tersedia; parser tests lulus; fixture perangkat belum direkam, sandbox menolak bind port |
+| M1-02 | IN PROGRESS | Approver, WebAuthnLib, Base64Url, ledger harness | M0-04, M1-01 | 23 tests approver lokal lulus; D-05 diterapkan, kompatibilitas browser dan native Monad masih gate |
 | M1-03 | TODO | Evaluasi spike 3 jam dan catat mode approval | M1-02 telah dimulai | Evaluasi saat timebox berakhir meskipun spike terhambat; WebAuthn evidence atau fallback D-12 eksplisit |
 
 ## Core, DSL, dan SDK
 
 | ID | Status | Task | Dependency | Acceptance / evidence |
 | --- | --- | --- | --- | --- |
-| M2-01 | TODO | AppRegistry + RupaAsset | M0-01 | FR-01/02; permissions, rarity/bps boundaries; native asset discovery events |
-| M2-02 | TODO | MappingRegistry + ERC-8004 adapter | M0-04, M2-01 | EIP-712 validation, cache/schema/revoke behavior; T-REG-02/03 |
-| M2-03 | TODO | PortLedger + provenance encoding | M1-02, M2-01/02 | D-06 locked; byte-identical TS/Solidity fixtures; T-LEDGER-01/02/04 |
-| M2-04 | TODO | Wiring, fee/pause decision dan revert atomicity | M2-03 | D-08/D-10 locked; protected one-time bind; T-LEDGER-03 bila payment enabled |
+| M2-01 | IN PROGRESS | AppRegistry + RupaAsset | M0-01 | Native mint, permissions, rarity/bps, dan transfer dalam integration suite; review keseluruhan requirement belum ditutup |
+| M2-02 | IN PROGRESS | MappingRegistry + ERC-8004 adapter | M0-04, M2-01 | EIP-712/cache/schema/revoke lulus dengan identity mock; ABI/wallet resolution live belum diverifikasi |
+| M2-03 | IN PROGRESS | PortLedger + provenance encoding | M1-02, M2-01/02 | D-06 diterapkan; shared encoding fixture lulus pada TS/Solidity; RPC discovery belum tersedia |
+| M2-04 | IN PROGRESS | Wiring, fee/pause decision dan revert atomicity | M2-03 | D-08/D-10 diterapkan; rollback payout dan reentrancy lulus lokal; deployment rehearsal ditunda |
 | M5-01 | TODO | DSL schema/interpreter/validator shared | M0-01, spesifikasi DSL | Operator/paths/caps/invariants; T-DSL-01–04 |
 | M5-02 | TODO | Agent pipeline dan HTTP errors | M5-01, M2-02 interface | Stub provider suite, retry/rate limit/dedupe; sepuluh pair dan tiga injection cases |
 | M5-03 | DEFERRED | Live provider/pinning/signer/proposal | M3-01, M4-01, Q-02/03 | Confirmed proposal dari output valid; content hash cocok; no keys in prompts |
-| M6-01 | TODO | SDK read/discovery/cache/provenance | M2-03, M5-01 | T-SDK-01/02 dengan mocks/local chain; typed result/errors |
-| M6-02 | TODO | SDK passkey register/rotate/port/progress | M1-02, M6-01 | T-SDK-03, cancel/deadline/nonce handling; true receipt success |
-| M6-03 | TODO | Admin helpers, content adapter, SDK build | M6-01/02 | Server secrets terisolasi, declarations/build; clean consumer local import |
+| M6-01 | IN PROGRESS | SDK read/discovery/cache/provenance | M2-03, M5-01 | Hash/chain verification tersedia dengan typed errors; read/discovery/cache/RPC belum diimplementasikan |
+| M6-02 | IN PROGRESS | SDK passkey register/rotate/port/progress | M1-02, M6-01 | Browser create/request dan DER/COSE tersedia; transaksi register/rotate/port serta progress belum tersedia |
+| M6-03 | IN PROGRESS | Admin helpers, content adapter, SDK build | M6-01/02 | Build SDK dan declarations lulus; admin/content helpers serta clean consumer masih TODO |
 
 ## Demo dan integrasi
 

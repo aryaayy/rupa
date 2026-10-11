@@ -1,6 +1,6 @@
 # Kontribusi
 
-Status awal: dokumentasi disiapkan pada 11 Oktober 2026; source code dan CI belum tersedia. Mulai dari [development](docs/development.md) dan [backlog](docs/backlog.md).
+Status 11 Oktober 2026: fondasi source dan tests lokal tersedia; workflow CI disiapkan tetapi belum dijalankan di GitHub. Mulai dari [development](docs/development.md) dan [backlog](docs/backlog.md).
 
 ## Siapa yang dapat berkontribusi
 

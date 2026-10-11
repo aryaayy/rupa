@@ -1,6 +1,8 @@
 # SDK dan API service
 
-Status: target interface; paket `@rupa/sdk` dan endpoint belum tersedia. Contoh bukan klaim package telah diterbitkan. Perubahan types tambahan harus konsisten dengan baseline handoff.
+Status: API integrasi di bawah masih target; package `@rupa/sdk` memiliki helper approval/passkey/provenance yang sudah diuji, tetapi `createRupa/getAssetsFor/port`, admin helpers, dan endpoint agent belum diimplementasikan. Package belum dipublikasikan. Export aktual ada di `packages/sdk/src/index.ts`.
+
+Helper tersedia: `approvalHash`, `approvalChallenge`, `decodeDerSignature`, `decodeRegistrationAuthData`, `validateClientData`, `assertionFromResponse`, `assertionDigest`, `createPasskey`, `requestAssertion`, `hashPortRecord`, dan `verifyProvenance`. `createPasskey` hanya membuat credential browser; belum mengirim transaksi register. `verifyProvenance` memverifikasi record dari caller terhadap head, belum mengambil log RPC. Browser capture belum diuji pada perangkat nyata.
 
 ## SDK publik
 

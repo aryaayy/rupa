@@ -32,9 +32,9 @@ Ledger menghitung approval hash dari data transaksi dan state terbaru. Approver 
 
 Verifikasi `type=webauthn.get`, challenge tepat 43 karakter base64url tanpa padding untuk 32 bytes, RP hash, UP/UV, deadline, dan P256. Key registration memeriksa COSE kty=2, crv=1, alg=-7 dan coordinate length. DER parser menolak integer malformed; r/s diserialisasi fixed-width dengan benar dan s dinormalisasi.
 
-Usulan D-05 menambahkan exact origin allowlist dan menolak flow cross-origin yang tidak didukung. [WebAuthn specification](https://www.w3.org/TR/webauthn-3/#sctn-verifying-assertion) memisahkan pemeriksaan origin dari RP ID dan challenge; RP hash saja bukan pengganti pemeriksaan origin. Pilihan parser harus mencegah nested-field/duplicate-field/escaped-string confusion. Dukungan browser dibuktikan dengan fixture asli; jangan berasumsi semua JSON memiliki byte layout sama.
+D-05 diterapkan dengan exact origin dan perbandingan seluruh bytes JSON terhadap urutan `type/challenge/origin`, dengan `crossOrigin:false` opsional. [WebAuthn specification](https://www.w3.org/TR/webauthn-3/#sctn-verifying-assertion) memisahkan origin dari RP ID dan challenge; RP hash saja bukan pengganti origin. Perbandingan penuh menolak nested/duplicate/extra fields dan escaping atau urutan berbeda. Pendekatan ini membatasi browser yang kompatibel; fixture perangkat belum tersedia. Jangan mengeklaim parser WebAuthn umum atau melewati validasi saat layout browser berbeda.
 
-`signCount` tidak dipakai sebagai replay guard karena passkey tersinkron dapat memberikan nilai nol, sebagaimana diantisipasi handoff. Nonce per owner menjadi replay guard aplikasi. Rotation tidak mereset nonce. Contract/state changes dalam transaksi yang revert harus rollback termasuk nonce.
+`signCount` tidak dipakai sebagai replay guard karena passkey tersinkron dapat memberikan nilai nol, sebagaimana diantisipasi handoff. Nonce per owner menjadi replay guard aplikasi. Rotation menaikkan nonce, termasuk jika key yang sama didaftarkan ulang. Contract/state changes dalam transaksi yang revert harus rollback termasuk nonce.
 
 Recovery menggunakan EOA owner melalui `rotatePasskey`. Ini berarti keamanan wallet owner tetap penting. Registrasi key membuktikan wallet memilih key tersebut; kebijakan attestation hardware tidak termasuk MVP. Jangan mengklaim kontrak menerima biometrik: yang diverifikasi adalah signature.
 
@@ -42,7 +42,7 @@ Recovery menggunakan EOA owner melalui `rotatePasskey`. Ini berarti keamanan wal
 
 [Dokumentasi Monad](https://docs.monad.xyz/developer-essentials/precompiles) menyebut input fixed-width 160 bytes pada `0x0100`, return 32-byte angka 1 untuk valid, dan empty bytes untuk invalid. Implementasi harus memeriksa `success`, panjang tepat 32, dan nilai 1 sebelum decode diterima. `eth_getCode` kosong tidak membuktikan precompile absen; gunakan vector valid dan invalid.
 
-Verifier local yang di-etch adalah alat unit test, bukan bukti runtime Monad. Gunakan fork/live call terpisah dengan block, input digest, output, dan tool version tercatat.
+Verifier lokal OpenZeppelin yang di-etch adalah alat unit test, bukan bukti runtime Monad. Fork Foundry mengeksekusi EVM lokal; gunakan direct RPC `eth_call` untuk native precompile dengan block, input digest, output, dan tool version tercatat. Script `verify:monad` tersedia tetapi belum berhasil dijalankan terhadap RPC dalam sandbox.
 
 ## Isolasi agent dan content
 

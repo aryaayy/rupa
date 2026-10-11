@@ -1,6 +1,8 @@
 # Spesifikasi kontrak
 
-Status: rancangan interface berdasarkan handoff; **belum ada Solidity, ABI hasil build, atau deployment Rupa**. Detail berstatus usulan di [decision log](decisions.md) harus dikunci sebelum ABI final.
+Status: source lima kontrak tersedia pada `contracts/src`; build Solidity 0.8.24 dan 42 test lokal lulus. **Belum ada deployment Rupa atau verifikasi ABI registry yang terpasang di Monad.** ABI lokal dihasilkan dari build; kompatibilitas deployment tetap gate M0/M3. Keputusan yang diterapkan dicatat di [decision log](decisions.md).
+
+Rincian ABI awal: `PasskeyApprover(rpIdHash, origin, binder)` dan `MappingRegistry(apps, identity, binder)` memiliki `bindLedger(address)` sekali. AppRegistry menyediakan `getApp/admin/minter/version`; RupaAsset menambah `getBase`; `MappingRegistry.mappings` mengembalikan struct Mapping. PortLedger memiliki `PORT_FEE`, `feeRecipient`, `approvalHash`, `lastAppOf`, dan `setPaused`; event `PortFeePaid` mencatat sisa fee. Source dan ABI hasil build menjadi referensi interface aktual.
 
 ## Alamat dan artefak
 
@@ -40,7 +42,7 @@ TokenURI/metadata harus memberi jalur yang jelas ke attrs JSON yang hash-nya coc
 | `updateSchema(appId, schemaURI, schemaHash)` | Admin app | Version bertambah, SchemaUpdated; mapping versi lama tidak usable untuk port baru |
 | `setMinter(appId, minter)` | Admin app | Minter baru valid; mutasi terdokumentasi |
 
-Baseline kerja: minter awal adalah admin, lalu dapat diganti. Batas panjang name/URI dan perilaku address zero dibekukan bersama ABI M2. Schema JSON belum dapat diperiksa kontrak; konsumen harus mengunduh dan mencocokkan hash. Event wajib: AppRegistered dan SchemaUpdated.
+Minter awal adalah admin, lalu dapat diganti. Name dibatasi 1–128 byte, schema URI 1–2048 byte; minter/payout zero dan schema hash kosong ditolak. Schema JSON belum dapat diperiksa kontrak; konsumen harus mengunduh dan mencocokkan hash. Event tersedia: AppRegistered, SchemaUpdated, MinterUpdated.
 
 ## MappingRegistry
 
@@ -53,7 +55,7 @@ Data mapping mengikuti handoff: type, target app, target version, agentId, conte
 | `noteApproval(mappingId)` | Hanya ledger yang terikat | Increment approvals; active bila belum ada pilihan yang usable menurut policy final |
 | `revokeMapping(mappingId)` | Target app admin | Mark revoked; clear pointer jika menunjuk mapping tersebut; emit MappingRevoked |
 
-Pointer stale sesudah schema update harus diperlakukan sebagai tidak ada mapping usable. Usulan M2: `noteApproval` dapat mengganti pointer stale ketika approval pertama untuk schema current tiba. Ini memperjelas makna "none active" pada handoff; wajib test sebelum finalisasi.
+Pointer stale sesudah schema update diperlakukan sebagai tidak ada mapping usable. `noteApproval` mengganti pointer stale ketika approval pertama untuk schema current tiba; mapping revoked juga tidak dipertahankan sebagai default. Perilaku ini memperjelas "none active" pada handoff dan sudah diuji lokal.
 
 Signature domain dan type mengikuti handoff:
 
@@ -63,11 +65,11 @@ domain: name=Rupa, version=1, chainId=block.chainid,
 type: Mapping(bytes32 assetType,uint32 targetAppId,uint64 schemaVersion,uint256 agentId,bytes32 contentHash)
 ```
 
-Signer berasal dari `getAgentWallet(agentId)`; fallback `ownerOf(agentId)` hanya berdasarkan policy ABI yang sudah diverifikasi, misalnya wallet zero. Error RPC/ABI tidak boleh otomatis mengaktifkan fallback. Initial MVP dapat membatasi signer agent pada EOA bila dukungan contract wallet belum dibangun, dan batasan tersebut harus ditulis.
+Implementasi lokal memakai `getAgentWallet(agentId)` dan fallback `ownerOf(agentId)` hanya jika wallet zero; call yang revert tidak memicu fallback. SignatureChecker OpenZeppelin mendukung EOA/ERC-1271, tetapi suite saat ini baru membuktikan jalur EOA dan identity mock. Perilaku ABI deployment tetap harus diverifikasi. Content URI tidak termasuk typed signature handoff; konsumen wajib memverifikasi contentHash untuk setiap hasil fetch, dan keberadaan mapping bukan jaminan ketersediaan URI.
 
 ## PasskeyApprover
 
-`Key = (uint256 qx, uint256 qy, bytes32 credIdHash)`. Satu key aktif per owner pada MVP. `nonces[owner]` tidak reset setelah rotation.
+`Key = (uint256 qx, uint256 qy, bytes32 credIdHash)`. Satu key aktif per owner pada MVP. Rotation menaikkan nonce untuk membatalkan outstanding approval, termasuk bila key yang sama dipilih lagi; nonce tidak direset.
 
 | Fungsi | Akses | Efek |
 | --- | --- | --- |
@@ -75,7 +77,7 @@ Signer berasal dari `getAgentWallet(agentId)`; fallback `ownerOf(agentId)` hanya
 | `rotatePasskey(qx, qy, credIdHash)` | Owner melalui `msg.sender` | Ganti key; key lama gagal; jangan mengurangi nonce |
 | `verifyApproval(owner, approvalHash, deadline, assertion)` | Hanya ledger | Verifikasi WebAuthn dan P256; nonce bertambah tepat sekali bila valid |
 
-`Assertion = (bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s)`. Penambahan origin parsing/index adalah keputusan M1, belum ABI final.
+`Assertion = (bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s)` didefinisikan di WebAuthnLib. Implementasi awal memeriksa seluruh serialization JSON terhadap exact type/challenge/origin dengan `crossOrigin:false` opsional, typeIndex=1 dan challengeIndex=23. Field tambahan, urutan berbeda, atau escaping berbeda ditolak; kompatibilitas perangkat masih perlu diuji.
 
 Wajib memeriksa deadline, authData minimal 37 byte, RP hash, flag UP dan UV, type, exact challenge, signature range/low-s, serta hasil precompile. SDK harus mempertahankan bytes clientDataJSON asli untuk signature hash, bukan melakukan serialize ulang.
 
@@ -96,11 +98,11 @@ Port harus menolak mapping tidak ada, revoked, type/target tidak cocok, atau sch
 
 Baseline history: `fromAppId` pada port pertama adalah origin; port berikutnya adalah target terakhir. Ini urutan provenance, bukan penentuan satu app tempat aset berada. Ulang port oleh owner baru diperbolehkan. Batas `recordUse` perlu diuji agar admin app yang tidak memiliki hubungan origin/activation dengan aset tidak dapat memalsukan use.
 
-Event wajib: Ported, Used, dan RoyaltyPaid **bila pembayaran benar-benar terjadi**. Lihat D-08 untuk formula yang masih terbuka. Tidak mengubah event history yang sudah terbit. `isActive` tetap true setelah transfer; SDK memeriksa owner, revoked/schema, dan menampilkan approval pemilik sebelumnya.
+Event wajib: Ported, Used, dan RoyaltyPaid **bila pembayaran benar-benar terjadi**. D-08 diterapkan: fee immutable, royalty sesuai bps origin, sisa ke feeRecipient; fee nol menonaktifkan pembayaran. `isActive` tetap true setelah transfer; SDK integrasi nantinya harus memeriksa owner/revoked/schema dan menampilkan approval pemilik sebelumnya.
 
 ## Encoding lintas implementasi
 
-Tabel berikut adalah baseline teknis; hash provenance menunggu pengesahan D-06 sebelum deploy.
+Tabel berikut menjadi kontrak encoding. Approval hash, challenge, dan record ID sudah diuji melalui fixture Solidity–TypeScript di `contracts/test/vectors/protocol.json`; content JCS dan helper mapping SDK belum diimplementasikan.
 
 | Nilai | Encoding |
 | --- | --- |
@@ -112,7 +114,7 @@ Tabel berikut adalah baseline teknis; hash provenance menunggu pengesahan D-06 s
 | Browser challenge bytes | Raw 32 bytes approval hash; clientData encodes as base64url tanpa padding |
 | Signature digest | `sha256(authenticatorData || sha256(originalClientDataJSONBytes))` |
 | P256 input | Lima uint256/bytes32 fixed-width: digest, r, s, qx, qy; tepat 160 byte |
-| Record ID, usulan | `keccak256(abi.encode(PortRecord))`; `prevRecord=bytes32(0)` pada port pertama |
+| Record ID | `keccak256(abi.encode(PortRecord))`; `prevRecord=bytes32(0)` pada port pertama |
 
 Jangan memakai `abi.encodePacked` untuk approval/mapping ID hanya karena precompile memakai packed input. SDK harus memakai urutan field dan tipe Solidity yang sama. Record timestamp direkonstruksi dari block event dengan batas uint64; event tidak memuat `at` pada interface handoff.
 

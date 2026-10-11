@@ -1,6 +1,6 @@
 # Rencana pengujian
 
-Status awal: **seluruh test runtime NOT RUN**. Test suite belum ada. Pemeriksaan dokumen tidak menggantikan unit, integration, fork, atau device test.
+Status 11 Oktober 2026: **42 test Foundry lokal dan 16 test SDK lulus**, termasuk fuzz challenge 256 kasus dan shared encoding fixture. Suite fork tersedia tetapi belum dijalankan; perangkat browser, live RPC, DSL/agent, dan full E2E tetap belum diuji. Hasil ada di [verification notes](verification-notes.md). Matriks berikut tetap target cakupan penuh, bukan daftar seluruh test yang sudah selesai.
 
 ## Strategi
 

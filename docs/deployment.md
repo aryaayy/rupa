@@ -21,7 +21,7 @@
 | `CHAIN_ID` | Server/tools | Tidak | Target `10143`; assert cocok RPC |
 | `DEPLOYER_PRIVATE_KEY` | Local deploy secret | Ya | Deploy; tidak dimuat service/browser |
 | `RP_ID` | Deploy/server | Tidak | Hostname final; sha256 ditanam pada approver |
-| `ALLOWED_ORIGIN` | Deploy/server, usulan D-05 | Tidak | Exact HTTPS origin untuk assertion policy |
+| `ALLOWED_ORIGIN` | Deploy/server, D-05 | Tidak | Exact HTTPS origin untuk assertion policy |
 | `AGENT_PRIVATE_KEY` | Agent server | Ya | EIP-712 dan submit proposal |
 | `AGENT_ID` | Agent server | Tidak | ID nyata dari ERC-8004 registration |
 | `LLM_API_KEY` | Agent server | Ya | Provider credential |

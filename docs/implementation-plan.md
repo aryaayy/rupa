@@ -1,6 +1,6 @@
 # Rencana implementasi
 
-Status: planning. Dokumentasi awal selesai disusun; seluruh milestone implementasi M0–M10 belum selesai. Pengguna meminta **deployment nanti**, jadi gate onchain deployment/hosting tidak dijalankan pada tahap inisialisasi ini.
+Status: development lokal M0–M2 berjalan. Lima kontrak, helper SDK passkey/provenance, dan capture app tersedia dengan tests lokal; milestone belum diklaim selesai sebelum lockfile, verifikasi live, browser matrix, serta seluruh acceptance terpenuhi. Pengguna meminta **deployment nanti**, jadi gate deployment/hosting tetap ditunda.
 
 ## Milestone dan gate
 

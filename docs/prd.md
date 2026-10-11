@@ -1,6 +1,6 @@
 # Product Requirements Document
 
-Versi 0.1 · 11 Oktober 2026 · Status: baseline perencanaan MVP, belum diimplementasikan.
+Versi 0.1 · 11 Oktober 2026 · Status: baseline MVP; fondasi kontrak/helper SDK diimplementasikan dan diuji lokal, integrasi produk belum lengkap. Lihat [backlog](backlog.md).
 
 Sumber: [handoff](../RUPA-HANDOFF.md). Ambiguitas: [telaah](handoff-review.md). Keputusan teknis tambahan: [decision log](decisions.md). Deployment ditunda sesuai arahan pengguna; requirement deployment di bawah adalah target tahap berikutnya.
 

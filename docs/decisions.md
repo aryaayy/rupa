@@ -15,19 +15,19 @@ Tanggal baseline: 11 Oktober 2026. **Tetap** berasal dari keputusan eksplisit ha
 
 ### D-05 — Verifikasi WebAuthn
 
-Status: **baseline handoff + usulan penguatan**, gate M1. Ledger menghitung hash dari current nonce/live owner; approver hanya menerima ledger. Pemeriksaan UP, UV, RP ID, deadline, low-s, dan hasil precompile wajib. Tambahkan verifikasi exact allowed origin serta penolakan embedded/cross-origin flow yang tidak didukung. Pemilihan parser dan perubahan struct assertion harus menghasilkan fixture browser dan negative tests sebelum ABI dibekukan. `typeIndex`/`challengeIndex` adalah offset byte UTF-8; substring tidak boleh menjadi pengganti parsing field top-level yang benar. Lihat [security](security.md).
+Status: **diterapkan lokal, kompatibilitas browser belum terbukti**, gate M1. Ledger menghitung hash dari current nonce/live owner; approver hanya menerima ledger. Pemeriksaan UP, UV, RP ID, deadline, range/low-s, dan hasil precompile tersedia. Penguatan terhadap handoff: exact allowed origin tanpa setter; whole-byte JSON comparison hanya menerima urutan `type/challenge/origin` dengan `crossOrigin:false` opsional. Nested/duplicate fields, field tambahan, whitespace, escaping, atau urutan lain ditolak; `typeIndex=1`, `challengeIndex=23`. Ini pembatasan kompatibilitas yang disengaja sampai fixture browser tersedia, bukan parser WebAuthn umum. Rotation menaikkan nonce bahkan saat key yang sama dipilih untuk membatalkan approval tertunda. Unit tests memakai crypto P256 nyata melalui verifier Solidity lokal; dukungan native Monad belum terbukti. Lihat [security](security.md).
 
 ### D-06 — Hash provenance
 
-Status: **usulan**, gate M2. Pilih `recordId = keccak256(abi.encode(record))` dengan `prevRecord` sekali di dalam tuple; ini menyederhanakan rumus ambigu pada §4.5. SDK memperoleh `at` dari timestamp block event, sementara kontrak memakai `uint64(block.timestamp)`. Jika memilih formula literal handoff dengan head tambahan, ubah spesifikasi dan fixture sebelum ada deployment. `fromAppId` berarti target dari port sebelumnya, atau origin untuk port pertama; bukan lokasi custody.
+Status: **diterapkan dan diuji lintas Solidity/TypeScript**, gate M2. `recordId = keccak256(abi.encode(record))` dengan `prevRecord` sekali di dalam tuple memperjelas rumus ambigu pada handoff §4.5. Fixture publik berada di `contracts/test/vectors/protocol.json`. Kontrak memakai `uint64(block.timestamp)`; SDK event reader nantinya mengambil timestamp block, sementara helper saat ini menerima records lengkap. `fromAppId` berarti target port sebelumnya, atau origin untuk port pertama; bukan lokasi custody. Helper menolak record hilang, perubahan asset/urutan/hash, timestamp mundur, dan head tidak cocok.
 
 ### D-07 — Runtime, UI, dan indexing
 
-Status: **baseline kerja**, gate M0/M6. Gunakan React + TypeScript + Vite untuk satu SPA agar hosting web terpisah dari agent Fastify. Handoff mengizinkan Vite/Next; keputusan ini dapat direvisi sebelum scaffold jika hosting mengharuskannya. Pin runtime Node dan package manager setelah cek dukungan dependency/hosting; Node 20 dalam handoff belum merupakan lock versi final. MVP menggunakan scan event dari deployment block, pagination, caching, lalu live ownership check. Indexer khusus ditunda.
+Status: **scaffold diterapkan sebagian**, gate M0/M6. Node 24.21.0 dan pnpm 10.20.0 dipin, menggantikan baseline Node 20 handoff untuk toolchain lokal ini; kompatibilitas hosting dan clean install belum dibuktikan. Solidity 0.8.24/Foundry 1.8.4, TypeScript 5.9.3, viem 2.57.4, dan OpenZeppelin 5.6.1 digunakan pada tests lokal. Web awal berupa alat capture TypeScript + Vite; React untuk consumer demo dan Fastify untuk agent menyusul. Event scan, pagination, cache, dan live owner check tetap target SDK; indexer khusus ditunda. Lockfile belum dihasilkan karena registry npm tidak terjangkau, sehingga reproducible install tetap gate M0.
 
 ### D-08 — Royalty
 
-Status: **usulan**, gate M2 sebelum kode pembayaran. Default yang diusulkan: `portFee = 0.001 MON`, `royalty = floor(portFee * originApp.royaltyBps / 10_000)`, sisa menuju penerima fee immutable yang tercatat di deployment; `msg.value` harus sama dengan fee. Ini membutuhkan getter fee dan konfigurasi penerima yang belum ada dalam handoff. Alternatif fee penuh ke origin harus secara eksplisit menjelaskan bahwa `royaltyBps` tidak dipakai pada MVP. Pilih satu; jangan mencampur keduanya. Jika pembayaran dipotong dari scope, nonaktifkan fee dan jangan emit `RoyaltyPaid` yang menyatakan pembayaran fiktif. Tambahan event indikatif harus dinamai berbeda serta didokumentasikan sebagai perubahan terhadap cut list handoff.
+Status: **diterapkan dan diuji lokal**, gate M2/M3. Constructor menetapkan `PORT_FEE` dan `feeRecipient` immutable; tidak ada nilai fee deployment yang sudah dipilih. Fixture lokal memakai 0.001 MON. `msg.value` harus tepat fee; `royalty = floor(PORT_FEE * originApp.royaltyBps / 10_000)` dibayar ke payout origin, sisanya ke feeRecipient. Ini memperjelas ketidakselarasan fee tetap/bps pada handoff dengan tambahan getter dan `PortFeePaid`. Event pembayaran hanya terbit setelah transfer berhasil. Fee nol menonaktifkan pembayaran/event. Payout failure membatalkan nonce, approval count, activation, provenance, dan saldo secara atomik; reentrancy guard diuji. Nilai fee/penerima aktual dicatat saat deployment nanti.
 
 ### D-09 — DSL dan cache
 
@@ -35,7 +35,7 @@ Status: **baseline kerja**, gate M5. RFC 8785 + UTF-8 + keccak256 untuk mapping/
 
 ### D-10 — Wiring dan emergency pause
 
-Status: **usulan**, gate M2/M3. Gunakan wiring ledger satu kali yang hanya dapat dilakukan deployer/admin awal, lalu tidak dapat diganti. Pause, jika diimplementasikan, hanya menghentikan port baru; read provenance dan recovery key tetap tersedia. Admin pause tidak boleh mengganti pemilik, key, atau historical record. Catat pemegang kewenangan pause di deployment. Tidak ada upgradeable Rupa proxy dalam scope MVP.
+Status: **diterapkan dan diuji lokal**, gate M2/M3. PasskeyApprover dan MappingRegistry menerima binder immutable pada constructor; `bindLedger` hanya sekali oleh binder, dengan target ber-code. PortLedger memakai Ownable untuk `setPaused`, hanya menghentikan port baru. Read provenance, recordUse, dan recovery key tetap tersedia. Admin pause tidak dapat mengganti pemilik aset, key, atau history melalui kewenangan pause. Alamat binder, ledger, pause owner, dan feeRecipient harus dicatat serta diverifikasi saat deployment. Tidak ada upgradeable Rupa proxy dalam scope MVP.
 
 ### D-11 — Agen dan reputasi
 
@@ -61,7 +61,7 @@ Keputusan ini menggantikan kewajiban identitas tunggal dan larangan menyeluruh c
 
 ## Keputusan pengguna yang masih terbuka
 
-Arahan pengguna pada 11 Oktober 2026: **deployment nanti saja**. Pekerjaan saat ini berfokus pada dokumentasi dan kesiapan development lokal. Pertanyaan infrastruktur ditunda; tidak menghambat penyelesaian paket dokumen ini. Tidak ada deployment atau pembuatan akun/remote dalam tahap ini.
+Arahan pengguna pada 11 Oktober 2026: **deployment nanti saja**. Pekerjaan saat ini berfokus pada implementasi dan pengujian lokal. Pertanyaan infrastruktur ditunda; tidak menghambat implementasi yang memakai fixtures lokal. Tidak ada deployment atau pembuatan akun/remote dalam tahap ini.
 
 | ID | Dibutuhkan | Menghambat | Status |
 | --- | --- | --- | --- |

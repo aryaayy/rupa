@@ -1,6 +1,6 @@
 # Quickstart — integrasi dalam target 10 menit
 
-**Status: panduan target, belum dapat dijalankan.** `@rupa/sdk`, manifest deployment, dan live agent belum tersedia. Angka 10 menit adalah target DX yang akan diuji pada M9, bukan hasil pengukuran saat ini. Untuk membangun repository terlebih dahulu, baca [development](development.md).
+**Status: panduan integrasi target, belum dapat dijalankan end-to-end.** Helper SDK tersedia, tetapi API `createRupa/getAssetsFor/port`, manifest deployment, dan live agent belum tersedia. Angka 10 menit adalah target DX M9, bukan hasil pengukuran saat ini. Untuk tests dan alat capture lokal, baca [development](development.md).
 
 ## Prasyarat setelah SDK tersedia
 

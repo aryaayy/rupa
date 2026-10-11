@@ -15,7 +15,7 @@ Baca `RUPA-HANDOFF.md`, `docs/handoff-review.md`, `docs/prd.md`, dan `docs/decis
 
 Ikuti M0–M10 di `docs/implementation-plan.md`. Mulai dari verifikasi dependency dan passkey, lalu kontrak, agent, SDK, aplikasi. Jangan menandai milestone selesai tanpa evidence di `docs/verification-notes.md` atau artefak pengujian yang relevan.
 
-Saat ini workspace baru memiliki dokumentasi. Periksa keberadaan manifest/script sebelum menjalankan perintah yang masih berstatus rencana. Jangan membuat hasil test, alamat kontrak, agent ID, atau live link fiktif.
+Source lima kontrak, helper SDK, alat capture browser, dan tests lokal tersedia. M0 belum selesai: lockfile pnpm, clean install, CI, secret scan, dan verifikasi dependency live belum terbukti. Periksa status di `docs/verification-notes.md`; jangan membuat hasil test, alamat kontrak, agent ID, atau live link fiktif.
 
 ## Implementasi
 

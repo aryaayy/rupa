@@ -6,7 +6,7 @@ Rupa membuat makna aset dapat digunakan lintas aplikasi: agent menyusun aturan m
 
 ## Akses juri
 
-**Status 11 Oktober 2026: inisialisasi dokumentasi. Produk, SDK, dan kontrak belum diimplementasikan atau dideploy.**
+**Status 11 Oktober 2026: development lokal berjalan.** Lima kontrak inti, helper SDK passkey/provenance, dan halaman capture passkey tersedia. Produk lengkap dan deployment belum tersedia.
 
 Sesuai arahan pengguna, deployment dikerjakan nanti; tahap ini menyiapkan dasar development lokal.
 
@@ -30,35 +30,47 @@ Demo yang direncanakan: Fire Sword dari Arena menjadi frame profil di Social dan
 
 1. Baca [handoff asli](RUPA-HANDOFF.md) dan [hasil telaah](docs/handoff-review.md).
 2. Gunakan [PRD](docs/prd.md), [arsitektur](docs/architecture.md), dan [keputusan](docs/decisions.md) sebagai dasar implementasi.
-3. Kerjakan [backlog M0](docs/backlog.md), kemudian spike verifikasi passkey M1 sebelum memperluas UI.
+3. Lanjutkan [backlog M0–M2](docs/backlog.md): lockfile/CI, bukti browser/testnet, dan kelengkapan negative tests masih perlu ditutup.
 4. Ikuti [panduan development](docs/development.md), [kontribusi](CONTRIBUTING.md), dan [rencana pengujian](docs/test-plan.md).
 
-[Indeks dokumentasi](docs/README.md) memuat seluruh spesifikasi. Perintah build/test dan contoh SDK di dokumentasi adalah kontrak implementasi yang direncanakan; belum dapat dijalankan dari workspace ini.
+[Indeks dokumentasi](docs/README.md) memuat seluruh spesifikasi. Helper SDK yang tersedia mencakup approval hash, DER/COSE parsing, browser credential capture, dan verifikasi provenance. API `createRupa/getAssetsFor/port`, mapping DSL, agent service, serta consumer demo masih dalam backlog.
+
+Dengan akses registry npm dan Foundry tersedia:
+
+```bash
+corepack enable
+pnpm install
+pnpm check
+pnpm build
+pnpm dev
+```
+
+`pnpm dev` membuka alat capture passkey pada `http://localhost:5173`; belum merupakan demo Arena/Social/Gallery. Instalasi pertama perlu menghasilkan dan meninjau `pnpm-lock.yaml`: pnpm/registry tidak dapat diakses dari sandbox saat bootstrap, sehingga lockfile belum dibuat. Pengujian lokal memakai dependency dari cache dengan versi yang dicatat di [verification notes](docs/verification-notes.md).
+
+Hasil lokal: **42 test Foundry**, termasuk fuzz 256 kasus, **16 test SDK**, typecheck, build SDK, dan build web lulus. Testnet, perangkat browser, clean install pnpm, CI GitHub, dan gitleaks belum tervalidasi. Sandbox menolak DNS eksternal serta bind port server browser.
 
 ## Kontribusi
 
 Semua kontributor manusia dapat berkontribusi ke `github.com/aryaayy/rupa` melalui push atau pull request sesuai hak akses repository, memakai identitas Git masing-masing. Agent AI seperti Codex, Cursor, Claude, dan sejenisnya tidak dicantumkan sebagai contributor, author, committer, atau co-author. Lihat [panduan kontribusi](CONTRIBUTING.md).
 
-## Struktur yang dituju
+## Struktur saat ini
 
 ```text
-contracts/            Solidity + Foundry: lima kontrak Rupa, tests, deploy script
-packages/mapping-dsl/ Interpreter dan validator mapping bersama
-packages/sdk/         @rupa/sdk
-services/agent/       HTTP service, LLM, IPFS, signer terisolasi
-apps/web/             Satu aplikasi web, empat route utama
-deployments/          Manifest hasil deployment per chain
+contracts/            Lima kontrak Rupa, unit/integration tests, suite fork terpisah
+packages/sdk/         Helper @rupa/sdk: approval, passkey, provenance
+apps/web/             Vite: alat capture passkey lokal
+scripts/              Vector generation, fork runner, direct RPC verification
 docs/                 Spesifikasi, runbook, bukti verifikasi
 ```
 
-Direktori implementasi di atas belum dibuat. Stack dasar mengikuti handoff: pnpm monorepo, TypeScript, viem, Fastify, ajv, Solidity `^0.8.24`, dan OpenZeppelin. Versi dependency dipin pada M0 setelah pemeriksaan kompatibilitas.
+Toolchain awal: Node 24.21.0, pnpm 10.20.0 (target instalasi), TypeScript 5.9.3, Solidity 0.8.24, Foundry 1.8.4, dan OpenZeppelin 5.6.1. Package DSL, service agent Fastify, consumer React, serta deployment script/manifest menyusul sesuai milestone.
 
 ## Batasan dan status
 
-- Belum ada hasil test, alamat deployment, live URL, publikasi npm, atau integrasi pihak ketiga yang dapat diklaim.
+- Hasil test lokal tersedia; alamat deployment, live URL, publikasi npm, dan integrasi pihak ketiga belum tersedia.
 - M0 harus membuktikan ABI registry dan perilaku precompile pada RPC; pembacaan dokumentasi resmi dicatat terpisah di [verification notes](docs/verification-notes.md).
 - RP ID/domain, provider/model LLM, pinning IPFS, dan hosting agent menunggu keputusan pemilik proyek.
 - Fallback raw P256 hanya boleh dipresentasikan sebagai raw P256, bukan WebAuthn passkey; lihat [security](docs/security.md).
 - BTX hanya roadmap sesuai handoff. Wrapper NFT, agent kedua, dan royalty mengikuti urutan pengurangan scope.
 
-Target lisensi adalah MIT sesuai handoff; file lisensi akan ditambahkan pada bootstrap M0. Target submission menurut handoff adalah **13 Oktober 2026**; jam dan zona waktu penutupan belum diketahui.
+Lisensi [MIT](LICENSE). Target submission menurut handoff adalah **13 Oktober 2026**; jam dan zona waktu penutupan belum diketahui.
