@@ -1,0 +1,8 @@
+title = "Rupa secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Installed dependencies and generated output"
+paths = ['''(^|/)node_modules/''', '''(^|/)dist/''', '''^contracts/(out|cache)/''', '''^\.git/''']

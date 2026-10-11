@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+if ! command -v gitleaks >/dev/null 2>&1; then
+  printf '%s\n' 'Install gitleaks before committing; see docs/development.md.' >&2
+  exit 1
+fi
+exec gitleaks git --pre-commit --staged --redact --config .gitleaks.toml
