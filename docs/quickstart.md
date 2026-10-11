@@ -1,79 +1,41 @@
-# Quickstart — integrasi dalam target 10 menit
+# Developer quickstart
 
-**Status: panduan integrasi target, belum dapat dijalankan end-to-end.** Helper SDK tersedia, tetapi API `createRupa/getAssetsFor/port`, manifest deployment, dan live agent belum tersedia. Angka 10 menit adalah target DX M9, bukan hasil pengukuran saat ini. Untuk tests dan alat capture lokal, baca [development](development.md).
+The SDK APIs are implemented; the ten-minute integration target has not been measured on a clean external consumer. The package is private to the workspace.
 
-## Prasyarat setelah SDK tersedia
-
-- App terdaftar dengan schema canonical, app ID nyata, dan mapping/type policy yang didukung.
-- Wallet/public clients viem mengarah ke Monad testnet yang telah diverifikasi.
-- Alamat kontrak, deployment block, dan agent endpoint nyata; wallet memiliki MON testnet bila menjadi sender.
-- Untuk demo passkey, semua consumer berada pada satu origin yang cocok RP ID deployment. SDK tidak membuat passkey lintas domain bekerja otomatis.
-
-## 1. Hubungkan package
-
-Di pnpm monorepo, tambahkan `@rupa/sdk` sebagai `workspace:*` dependency consumer. Setelah paket dipublikasikan, command consumer eksternal yang dituju adalah:
+## Local product
 
 ```bash
-pnpm add @rupa/sdk viem
+pnpm install --frozen-lockfile
+pnpm demo
 ```
 
-Jangan menjalankan command itu sebagai bukti paket sudah ada di registry. Sebelum publikasi, uji consumer bersih melalui hasil `pnpm pack`/tarball lokal saat M6/M9.
+Open http://localhost:5173/arena. Use the local judge flow in [judge guide](judge-guide.md). This environment could compile and test components but could not start Anvil's listening socket.
 
-## 2. Inisialisasi client
+## Consumer integration
 
-Contoh berikut membutuhkan `walletClient`, `registeredAppId`, `agentUrl`, dan `connectedAddress` dari konfigurasi aplikasi. Provider wallet, connect UI, dan approval UI disediakan consumer.
+Add `"@rupa/sdk": "workspace:*"` to a workspace consumer and build with `pnpm build:packages`. Supply a viem PublicClient and WalletClient, a real target app ID and the agent's public base URL:
 
 ```ts
 import { createRupa } from "@rupa/sdk";
 
-const rupa = createRupa({
-  chain: "monad-testnet",
-  appId: registeredAppId,
-  walletClient,
-  agentUrl,
-});
-
+const rupa = createRupa({ publicClient, walletClient, agentUrl, appId });
 const assets = await rupa.getAssetsFor(connectedAddress);
-```
-
-Render `active` menggunakan view tervalidasi. Tampilkan Bring here pada `portable`. Pada `unsupported`, tampilkan reason yang diberikan. Jangan menampilkan transport error sebagai daftar kosong yang berhasil dimuat.
-
-## 3. Register passkey dan lakukan port
-
-Registrasi dijalankan sekali oleh owner ketika key belum ada, melalui aksi user:
-
-```ts
-await rupa.passkey.register();
-```
-
-Kemudian setelah pengguna meninjau target, mapping, dan fee yang berlaku:
-
-```ts
-const portResult = await rupa.port(selectedAssetId, {
-  onStep: (step) => updatePortStatus(step),
-  onReview: (preview) => showApprovalReview(preview),
+const key = await rupa.passkey.register();
+const result = await rupa.port(selectedAssetId, appId, key, {
+  onReview: preview => showApprovalDialog(preview),
+  onStep: (step, detail) => updateStatus(step, detail?.txHash),
 });
-
-const updatedAssets = await rupa.getAssetsFor(connectedAddress);
 const history = await rupa.getProvenance(selectedAssetId);
 ```
 
-`updatePortStatus` adalah callback UI consumer. `showApprovalReview` adalah dialog consumer yang mengembalikan `Promise<boolean>`; hook `onReview` masih usulan API M6 untuk memastikan mapping baru dapat ditinjau sebelum prompt passkey. Tangani RupaError menurut `code`; untuk cancel cukup kembali ke state sebelumnya. Bila ada txHash tetapi status belum pasti, periksa receipt sebelum submit ulang. Aktivasi dan indikator hash verified baru ditampilkan setelah konfirmasi/verifikasi berhasil.
+The dialog returns Promise<boolean>. The public key descriptor returned by register must be retained for subsequent ports; its Uint8Array/bigint fields need explicit serialization. Read methods can run anywhere. Approval must run at the deployment's exact origin: https://rupa-mu.vercel.app for Monad, or http://localhost:5173 for the separate local fixture.
 
-## 4. Integrasi origin app
+Use active views only after validation. Show portable assets with a review/approval action, and unsupported reasons explicitly. Catch RupaError codes; preserve txHash on TX_STATUS_UNKNOWN and inspect the receipt before retrying.
 
-Di lingkungan admin yang sah, gunakan `admin.registerApp`, `admin.mint`, dan `admin.recordUse`. Wallet admin/minter atau adapter backend menandatangani transaksi; jangan memasukkan private key service atau pinning token ke aplikasi browser. Content publisher harus menghasilkan schema/attrs canonical dengan hash yang cocok.
+Complete examples, content adapters, ownership checks, log scanning limits and exports are in the [SDK README](../packages/sdk/README.md). The [agent README](../services/agent/README.md) documents configuration and endpoints.
 
-Gunakan schema output kecil dengan required/enum/length caps. Contoh mapping dan tier policy ada di [DSL](mapping-dsl.md). Daftarkan schema baru melalui updateSchema; versi bertambah dan mapping versi lama perlu diganti.
+## Origin integration
 
-## 5. Checklist integrasi
+Use the exported contract ABIs with an authorized viem server/admin wallet for registerApp, mint and recordUse. The three-app setup helper and demo actions provide examples in services/agent. There is no public rupa.admin facade in this release. Keep signers and pinning credentials server-side.
 
-- [ ] App ID dan chain berasal dari deployment nyata.
-- [ ] Setidaknya satu aset dibaca dengan owner dan origin benar.
-- [ ] Register passkey dan port dapat dilakukan dari origin yang sesuai.
-- [ ] Cache hit diuji untuk type, target app, dan schema version yang sama.
-- [ ] Schema update/revoke, cancel, dan insufficient funds memberi error yang dapat dipahami.
-- [ ] Provenance diterima hanya setelah head diverifikasi.
-- [ ] Consumer tidak membawa server credentials.
-
-Catat waktu mulai/selesai dan kendala uji sebagai T-DX-01. Dokumentasi API lengkap ada di [SDK dan API](sdk-and-api.md); akses demo akan ditambahkan di [judge guide](judge-guide.md) setelah deployment.
+The live app IDs and agent ID remain unregistered. Follow [deployment setup](deployment.md) to record actual IDs without replacing the deployed contracts. Validate a clean consumer, revoke/schema-change handling, provider failure and device compatibility before calling the quickstart fully verified.

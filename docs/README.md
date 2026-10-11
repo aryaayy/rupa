@@ -1,6 +1,6 @@
 # Indeks dokumentasi
 
-Baseline: [RUPA-HANDOFF.md](../RUPA-HANDOFF.md). Paket dokumentasi ini mengubah handoff menjadi requirement, kontrak implementasi, dan langkah kerja yang dapat diperiksa. **Fondasi kontrak dan helper SDK sudah diuji lokal; integrasi produk dan deployment belum tersedia.** Status aktual ada di [verification notes](verification-notes.md).
+Baseline: [RUPA-HANDOFF.md](../RUPA-HANDOFF.md). Paket dokumentasi ini mengubah handoff menjadi requirement, kontrak implementasi, dan langkah kerja yang dapat diperiksa. **Lima kontrak sudah live menurut konfirmasi pengguna; SDK, DSL, agent dan UI demo sudah diimplementasikan. App/agent registration dan E2E produk baru belum selesai.** Status aktual ada di [verification notes](verification-notes.md).
 
 ## Jalur baca
 

@@ -1,6 +1,10 @@
 # Rencana pengujian
 
-Status 11 Oktober 2026: **42 test Foundry lokal dan 16 test SDK lulus**, termasuk fuzz challenge 256 kasus dan shared encoding fixture. Suite fork tersedia tetapi belum dijalankan; perangkat browser, live RPC, DSL/agent, dan full E2E tetap belum diuji. Hasil ada di [verification notes](verification-notes.md). Matriks berikut tetap target cakupan penuh, bukan daftar seluruh test yang sudah selesai.
+Status 11 Oktober 2026: original 42 tests kontrak tetap lulus, ditambah 3 deploy rehearsal tests. DSL/SDK/agent unit suite tersedia dan lulus pada hasil terbaru di verification notes. Pengguna mengonfirmasi fork dan Windows Hello pada Monad; rerun fork saat ini gagal DNS, E2E baru terhalang socket Anvil, gitleaks tidak tersedia. Hasil ada di [verification notes](verification-notes.md). Matriks berikut tetap target cakupan penuh, bukan daftar seluruh test yang sudah selesai.
+
+## E2E yang diimplementasikan
+
+pnpm test:e2e membangun packages/service/contracts, menyalakan disposable Anvil + mock LLM + web localhost, dan menjalankan tests/e2e/port.spec.ts. Chromium memakai [CDP WebAuthn](https://chromedevtools.github.io/devtools-protocol/tot/WebAuthn/) melalui [Playwright CDP session](https://playwright.dev/docs/api/class-browsercontext#browser-context-new-cdp-session), resident credential dan user verification. Test menyelesaikan Arena mint, registration, dua port, memeriksa owner tetap, nonce +2, provenance dua target dan no retranslation setelah WIN. Test kedua memeriksa direct Docs/capture dan mobile overflow. Ini test nyata yang ditulis, belum hasil browser PASS; startup Anvil diblokir sandbox.
 
 ## Strategi
 
@@ -57,7 +61,8 @@ Sepuluh pasangan mapping dapat memakai fixture jenis aset/schema berbeda tanpa m
 
 | Perangkat | Register | Approve onchain | Cancel/retry | Cached port | Rotate/recover | Status awal |
 | --- | --- | --- | --- | --- | --- | --- |
-| Chrome desktop | [ ] | [ ] | [ ] | [ ] | [ ] | NOT RUN |
+| Windows Hello / origin live | Owner confirmed | Owner confirmed | Approval verifier confirmed | [ ] | [ ] | Browser version/fixture not supplied; full new flow pending |
+| Chromium CDP / local | [ ] | [ ] | [ ] | [ ] | [ ] | Harness startup blocked by socket policy |
 | iOS Safari | [ ] | [ ] | [ ] | [ ] | [ ] | NOT RUN |
 | Android browser | [ ] | [ ] | [ ] | [ ] | [ ] | NOT RUN |
 

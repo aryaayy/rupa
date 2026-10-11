@@ -1,6 +1,6 @@
 # Spesifikasi kontrak
 
-Status: source lima kontrak tersedia pada `contracts/src`; build Solidity 0.8.24 dan 42 test lokal lulus. **Belum ada deployment Rupa atau verifikasi ABI registry yang terpasang di Monad.** ABI lokal dihasilkan dari build; kompatibilitas deployment tetap gate M0/M3. Keputusan yang diterapkan dicatat di [decision log](decisions.md).
+Status: lima kontrak existing sudah live menurut konfirmasi pengguna; source core tidak diubah. Original 42 tests tetap lulus dan tiga deploy rehearsal tests ditambahkan. ABI SDK dihasilkan dari Foundry build; rerun live saat ini terhalang DNS. Keputusan yang diterapkan dicatat di [decision log](decisions.md).
 
 Rincian ABI awal: `PasskeyApprover(rpIdHash, origin, binder)` dan `MappingRegistry(apps, identity, binder)` memiliki `bindLedger(address)` sekali. AppRegistry menyediakan `getApp/admin/minter/version`; RupaAsset menambah `getBase`; `MappingRegistry.mappings` mengembalikan struct Mapping. PortLedger memiliki `PORT_FEE`, `feeRecipient`, `approvalHash`, `lastAppOf`, dan `setPaused`; event `PortFeePaid` mencatat sisa fee. Source dan ABI hasil build menjadi referensi interface aktual.
 
@@ -8,16 +8,16 @@ Rincian ABI awal: `PasskeyApprover(rpIdHash, origin, binder)` dan `MappingRegist
 
 | Komponen | Alamat testnet | Status |
 | --- | --- | --- |
-| RupaAsset | TBD | Belum deploy |
-| AppRegistry | TBD | Belum deploy |
-| MappingRegistry | TBD | Belum deploy |
-| PasskeyApprover | TBD | Belum deploy |
-| PortLedger | TBD | Belum deploy |
-| ERC-8004 Identity | `0x8004A818BFB912233c491871b3d84c89A494BD9e` | Tercantum di upstream; runtime belum diverifikasi |
-| ERC-8004 Reputation | `0x8004B663056A597Dffe9eCcC1965A193B7388713` | Tercantum di upstream; runtime belum diverifikasi |
-| P256 precompile | `0x0100` | Didokumentasikan Monad; vector test belum dijalankan |
+| RupaAsset | `0x2cC8F81a40cB9e7a9eb8bBBEd6483F17923257a4` | Existing; dikonfirmasi pengguna |
+| AppRegistry | `0xd114Ad7377BAb635ed247482Ea4fF7bD89c2c86a` | Existing; dikonfirmasi pengguna |
+| MappingRegistry | `0xC5040F650aBc306E583EB7A74f7d38710fFBfD7d` | Existing; dikonfirmasi pengguna |
+| PasskeyApprover | `0x50B46B94f13f04aEE158D28202E38C1CEDEfac39` | Existing; dikonfirmasi pengguna |
+| PortLedger | `0x373ff4Bd8439F837b504870be4B28ca5c677Fc1f` | Existing; dikonfirmasi pengguna |
+| ERC-8004 Identity | `0x8004A818BFB912233c491871b3d84c89A494BD9e` | Upstream; fork keberhasilan dikonfirmasi pengguna, rerun tertahan DNS |
+| ERC-8004 Reputation | `0x8004B663056A597Dffe9eCcC1965A193B7388713` | Upstream; fork keberhasilan dikonfirmasi pengguna, rerun tertahan DNS |
+| P256 precompile | `0x0100` | Windows Hello verifyApproval di Monad dikonfirmasi pengguna |
 
-Alamat ERC-8004 sesuai [repository resmi](https://github.com/erc-8004/erc-8004-contracts). ABI harus diambil dari upstream pada commit tertentu dan dibandingkan dengan deployment aktual, termasuk implementation proxy bila relevan. Sumber kebenaran deployment Rupa nantinya `deployments/10143.json`, berisi alamat, deployment block/tx, compiler/ABI revision, RP ID, agent IDs, dan app IDs; file tersebut belum dibuat.
+Alamat ERC-8004 sesuai [repository resmi](https://github.com/erc-8004/erc-8004-contracts). ABI harus diambil dari upstream pada commit tertentu dan dibandingkan dengan deployment aktual, termasuk implementation proxy bila relevan. Sumber alamat/RP binding adalah `deployments/monad-testnet.json` dan export SDK hasil generator. Deployment block/receipt belum diberikan, app/agent IDs belum didaftarkan. Source deployment existing tidak boleh diganti; script hanya untuk reproduksi.
 
 ## RupaAsset
 
@@ -98,11 +98,11 @@ Port harus menolak mapping tidak ada, revoked, type/target tidak cocok, atau sch
 
 Baseline history: `fromAppId` pada port pertama adalah origin; port berikutnya adalah target terakhir. Ini urutan provenance, bukan penentuan satu app tempat aset berada. Ulang port oleh owner baru diperbolehkan. Batas `recordUse` perlu diuji agar admin app yang tidak memiliki hubungan origin/activation dengan aset tidak dapat memalsukan use.
 
-Event wajib: Ported, Used, dan RoyaltyPaid **bila pembayaran benar-benar terjadi**. D-08 diterapkan: fee immutable, royalty sesuai bps origin, sisa ke feeRecipient; fee nol menonaktifkan pembayaran. `isActive` tetap true setelah transfer; SDK integrasi nantinya harus memeriksa owner/revoked/schema dan menampilkan approval pemilik sebelumnya.
+Event wajib: Ported, Used, dan RoyaltyPaid **bila pembayaran benar-benar terjadi**. D-08 diterapkan: fee immutable, royalty sesuai bps origin, sisa ke feeRecipient; fee nol menonaktifkan pembayaran. `isActive` tetap true setelah transfer; SDK sekarang memeriksa owner/revoked/schema dan menampilkan approval pemilik sebelumnya.
 
 ## Encoding lintas implementasi
 
-Tabel berikut menjadi kontrak encoding. Approval hash, challenge, dan record ID sudah diuji melalui fixture Solidity–TypeScript di `contracts/test/vectors/protocol.json`; content JCS dan helper mapping SDK belum diimplementasikan.
+Tabel berikut menjadi kontrak encoding. Approval hash, challenge, dan record ID sudah diuji melalui fixture Solidity–TypeScript di `contracts/test/vectors/protocol.json`; content canonicalization profile dan mappingId/pairKey SDK telah diimplementasikan dan diuji.
 
 | Nilai | Encoding |
 | --- | --- |
@@ -120,7 +120,7 @@ Jangan memakai `abi.encodePacked` untuk approval/mapping ID hanya karena precomp
 
 ## Wiring, error, dan test
 
-Deploy AppRegistry, RupaAsset, MappingRegistry, PasskeyApprover dengan binding ledger yang belum aktif, lalu PortLedger dan finalisasi binding sekali. Seluruh setter binding hanya deployer/admin awal; no public race. Urutan tepat menyesuaikan constructor final D-10 dan diuji di deployment rehearsal.
+Deploy AppRegistry, RupaAsset, MappingRegistry, PasskeyApprover dengan binding ledger yang belum aktif, lalu PortLedger dan finalisasi binding sekali. Seluruh setter binding hanya deployer/admin awal; no public race. `contracts/script/Deploy.s.sol` mereproduksi urutan D-10; rehearsal menguji kedua binding. Ini bukan instruksi redeploy existing Monad.
 
 Gunakan custom errors yang dapat dipetakan SDK, seperti Unauthorized, UnknownAsset, UnknownApp, InvalidMapping, SchemaOutdated, InvalidAgentSignature, NoPasskey, InvalidAssertion, DeadlineExpired, InvalidFee. Nama final berasal dari ABI, bukan string matching.
 

@@ -1,129 +1,50 @@
-# SDK dan API service
+# SDK and HTTP API
 
-Status: API integrasi di bawah masih target; package `@rupa/sdk` memiliki helper approval/passkey/provenance yang sudah diuji, tetapi `createRupa/getAssetsFor/port`, admin helpers, dan endpoint agent belum diimplementasikan. Package belum dipublikasikan. Export aktual ada di `packages/sdk/src/index.ts`.
+Implementation references: [SDK README](../packages/sdk/README.md), [types](../packages/sdk/src/types.ts), [typed errors](../packages/sdk/src/errors.ts), [agent README](../services/agent/README.md). The APIs below are implemented and tested with mocked clients; browser/chain E2E remains a separate gate.
 
-Helper tersedia: `approvalHash`, `approvalChallenge`, `decodeDerSignature`, `decodeRegistrationAuthData`, `validateClientData`, `assertionFromResponse`, `assertionDigest`, `createPasskey`, `requestAssertion`, `hashPortRecord`, dan `verifyProvenance`. `createPasskey` hanya membuat credential browser; belum mengirim transaksi register. `verifyProvenance` memverifikasi record dari caller terhadap head, belum mengambil log RPC. Browser capture belum diuji pada perangkat nyata.
-
-## SDK publik
+## Public SDK
 
 ```ts
-const rupa = createRupa({
-  chain: "monad-testnet",
-  appId,
-  walletClient,
-  agentUrl,
+const rupa = createRupa({ publicClient, walletClient, agentUrl, appId });
+const assets = await rupa.getAssetsFor(owner, appId);
+const key = await rupa.passkey.register();
+const result = await rupa.port(assetId, targetAppId, key, {
+  onReview: async preview => showDialog(preview),
+  onStep: (step, detail) => updateStatus(step, detail?.txHash),
 });
-
-const assets = await rupa.getAssetsFor(ownerAddress);
-const result = await rupa.port(assetId, { onStep });
 const history = await rupa.getProvenance(assetId);
-await rupa.passkey.register();
-const view = rupa.applyMapping(mappingJson, assetContext);
 ```
 
-| API | Kontrak perilaku |
+There is no chain string argument or admin facade. The deployment defaults to the exported Monad manifest; local tests explicitly pass their deployment. Admin operations use exported viem ABIs or the service's setup/demo adapters.
+
+getAssetsFor returns active, portable or unsupported with a reason. Native origin assets use verified attrs. Target views require rule grammar, content hash, mapping metadata, current schema and tier invariants. Activation includes approver and approvedByPreviousOwner; historical activation survives transfer but live ownership determines discovery.
+
+getProvenance reads Ported logs and their block timestamps, verifies every record against headOf and returns schema versions and transaction hashes. Missing, reordered, removed or tampered records fail closed. WIN counts use origin-app Used events, independent of the port hash chain.
+
+The optional review hook runs after verified mapping resolution, before the passkey prompt. False cancels without submission. Nonce, deadline, ownership and schema/revocation are checked around the prompt, then the contract simulation/transaction enforces them again. TX_STATUS_UNKNOWN includes the submitted hash.
+
+## Agent routes
+
+POST /translate accepts only assetId (positive uint256 decimal string) and targetAppId (positive uint32 number). The server loads source/schema from its configured chain. It returns mappingId, contentURI, txHash (nullable for existing proposals), and reused after a confirmed proposal or verified reuse. Concurrent calls for one pair share generation; pending transaction outcomes require receipt reconciliation.
+
+GET /config exposes public runtime configuration. GET /health reports process readiness, chain and mode. GET /.well-known/agent-card.json provides discovery metadata; setup stores an ERC-8004 registration card onchain. See the agent README for authenticated demo challenge/session/faucet/game routes.
+
+Errors use `{ error: { code, message, requestId, txHash? } }`. Codes are stable; provider internals are redacted.
+
+| Code category | HTTP behavior |
 | --- | --- |
-| `createRupa(config)` | Validasi chain/app/config; resolve deployment yang cocok; tidak auto-submit transaksi |
-| `getAssetsFor(address)` | Discovery kandidat lalu live ownership; mapping/content validation; status dan origin/provenance |
-| `port(assetId, {onStep})` | Resolve mapping current, preview/approval, submit, tunggu receipt; hasil mengandung txHash, recordId, mappingId |
-| `getProvenance(assetId)` | Reconstruct record dan verifikasi head; typed error bila data incomplete/tampered |
-| `passkey.register()` | Browser create, parse COSE, validasi ES256/P256, tx register oleh wallet owner |
-| `applyMapping(mapping, context)` | Pure evaluator; schema/policy yang sudah dimuat atau dibundel dipakai untuk output validation; tidak fetch saat fungsi berjalan |
-| `admin.registerApp({name,schema,payout,royaltyBps})` | Pin canonical schema melalui adapter yang berwenang, submit registry tx |
-| `admin.mint(player, {assetType,rarity,attrs})` | Hash/pin attrs melalui adapter, panggil minter; tidak menyimpan server credentials di browser |
-| `admin.recordUse(assetId, "WIN")` | Encode tag dan kirim sebagai app admin; enforce contract permissions |
+| Invalid JSON, IDs, body or demo session | 400 |
+| Disallowed browser origin | 403 |
+| Unknown route | 404 |
+| Schema changed during generation | 409 |
+| Mapping rejected / unsupported asset | 422 |
+| Rate limited | 429 + Retry-After |
+| RPC/provider/content/transaction uncertainty | 503 |
 
-Kebutuhan implementasi M6: tambahkan adapter content publisher dan pilihan public client/transport tanpa memasukkan pinning secret ke frontend. `applyMapping` harus mendapatkan schema yang sudah tersedia: bisa melalui cache instance `createRupa`, atau explicit context/schema pada API pure package DSL. Jangan menyebut fungsi pure jika ia diam-diam melakukan HTTP.
+No retryable flag, job polling API, relayer, reputation selector or generic publisher/admin SDK is implemented. The owner wallet submits ports. Consumer cancellation and transaction-state errors remain typed SDK errors rather than fabricated HTTP success responses.
 
-`passkey.rotate()` adalah perluasan SDK yang direncanakan untuk recovery; user tetap memakai wallet owner. EOA connect dibutuhkan untuk registrasi/recovery dan sender default; port dapat memakai relayer bila adapter tersedia. Dukungan relayer tidak diasumsikan gratis atau otomatis tersedia.
+## Cache and trust
 
-## Status aset
+Key scope is chain + registry + asset type + target + schema version. Proposed is distinct from active: PortLedger activates on the first owner-approved port. Gallery requires its own mapping even after Social succeeds.
 
-Hasil baseline mempunyai `assetId`, `status`, `view`, `origin`, dan `provenance`.
-
-| `status` | Arti |
-| --- | --- |
-| `active` | Ada activation dan mapping yang masih usable; view lolos validasi |
-| `portable` | Asset supported, belum mempunyai activation usable untuk app; mapping dapat diperoleh |
-| `unsupported` | Jenis aset/schema berada di luar kemampuan yang dideklarasikan; alasan spesifik tersedia |
-
-Usulan field tambahan: `reasonCode`, `activation: { mappingId, approver, approvedByPreviousOwner }`, dan `mapping: { id, schemaVersion, agentId }`. Historical `isActive=true` tidak otomatis berarti view current usable. Bila revoked/stale, tampilkan alasan dan replacement flow. Transport error tidak boleh diam-diam mengubah semua aset menjadi unsupported.
-
-Jika history belum lengkap atau content tidak valid, `view` tidak diberikan sebagai data tervalidasi. Pada API baca multi-aset, error per aset dapat disertakan secara terstruktur; error konfigurasi/chain tetap menggagalkan request keseluruhan. Bentuk final union type dikunci saat M6.
-
-## Progress dan retry
-
-Step handoff: `mapping:cached`, `mapping:requesting`, `passkey:prompt`, `tx:sent`, `tx:confirmed`. SDK mendokumentasikan urutan dan payload event. Cache hit memerlukan mapping current dan usable untuk **target app yang sama**.
-
-Gunakan nonce/deadline terbaru ketika membangun approval. Jika nonce/schema berubah saat dialog, refresh dan minta persetujuan baru. Timeout setelah tx dikirim harus mengembalikan txHash supaya caller mengecek receipt, tidak mengirim ulang tanpa memeriksa state. Setelah receipt sukses, invalidate activation/history cache dan baca ulang state penting.
-
-Untuk preview mapping yang baru selesai dibuat, `onStep` saja belum menyediakan jeda konfirmasi. Usulan M6: opsi `onReview(preview): Promise<boolean>` pada `port`, dipanggil setelah mapping tervalidasi dan sebelum `passkey:prompt`; false menghentikan flow tanpa submit. UI consumer harus memasang hook ini atau menyediakan tahap prepare/review ekuivalen yang terdokumentasi. Bekukan bentuk API saat M6 dan uji cancel serta perubahan nonce/schema selama review.
-
-## Agent HTTP
-
-### `POST /translate`
-
-Request JSON:
-
-```json
-{ "assetId": "42", "targetAppId": 2 }
-```
-
-assetId adalah string desimal uint256; targetAppId integer uint32. Chain dikunci oleh konfigurasi service; jangan menerima RPC URL atau private key dari request. Batasi body dan rate per IP serta assetType. Endpoint publik memproses data publik; ini bukan endpoint admin mint.
-
-Response sukses sesudah proposal confirmed:
-
-```json
-{
-  "mappingId": "<bytes32-hex>",
-  "contentURI": "ipfs://<cid>",
-  "txHash": "<transaction-hash>"
-}
-```
-
-Placeholder di atas bukan nilai valid. Baseline synchronous API mengembalikan HTTP 200 untuk proposal baru maupun reuse proposal valid yang sudah ada; field opsional `reused` dapat menjelaskan hasil. Bila job in-progress, gunakan 409 dengan requestId/retry hint; jangan mengembalikan sukses sebelum proposal confirmed. Pemindahan ke job API asynchronous memerlukan revisi spesifikasi jika limit hosting menuntutnya.
-
-Deduplication key: chain + MappingRegistry + assetType + targetAppId + schemaVersion. Sebelum sign dan submit, baca ulang versi schema. Jika berubah, hentikan hasil lama. Setelah tx timeout, rekonsiliasi registry/receipt sebelum membuat proposal baru.
-
-### `GET /.well-known/agent-card.json`
-
-Mengembalikan card agent sesuai schema ERC-8004 yang sudah diverifikasi: identity, nama, endpoint/service, model, dan supported trust. Jangan mempublikasikan provider key, signer secret, atau prompt internal berisi data sensitif. Card tidak membuktikan endpoint tersedia; health check terpisah.
-
-### `GET /health`
-
-HTTP 200 untuk service ready; 503 bila dependency konfigurasi wajib belum siap. Response publik hanya status, versi service, dan chain ID yang tidak sensitif. Jangan memanggil LLM berbayar pada setiap probe atau menampilkan exception/env lengkap.
-
-## Error envelope dan pemetaan
-
-```json
-{
-  "error": {
-    "code": "MAPPING_REJECTED",
-    "message": "Mapping belum memenuhi schema aplikasi.",
-    "retryable": false,
-    "requestId": "<public-request-id>"
-  }
-}
-```
-
-| Code SDK / service | HTTP bila relevan | Recovery |
-| --- | --- | --- |
-| `INVALID_REQUEST` | 400 | Perbaiki input |
-| `ASSET_NOT_FOUND`, `APP_NOT_FOUND` | 404 | Refresh atau pilih ID yang ada |
-| `NO_PASSKEY` | — | Register melalui wallet |
-| `PASSKEY_CANCELLED`, `PASSKEY_UNAVAILABLE` | — | User retry / perangkat yang mendukung |
-| `NOT_OWNER`, `WRONG_CHAIN` | — | Ganti wallet/network atau refresh |
-| `SCHEMA_OUTDATED`, `NONCE_CHANGED` | 409 / — | Refresh data dan approval |
-| `TRANSLATION_IN_PROGRESS` | 409 | Retry sesuai hint; tidak memanggil model ganda |
-| `MAPPING_REJECTED`, `UNSUPPORTED_ASSET` | 422 | Tampilkan detail aman; jangan submit |
-| `CONTENT_HASH_MISMATCH`, `PROVENANCE_INVALID` | — | Fail closed dan laporkan sumber data |
-| `RATE_LIMITED` | 429 | Backoff sesuai Retry-After |
-| `DEPENDENCY_UNAVAILABLE` | 502/503 | Retry terbatas, jangan ubah validasi |
-| `TRANSLATION_TIMEOUT` | 504 | Periksa request/tx yang mungkin sudah berjalan |
-| `DEADLINE_EXPIRED`, `TX_REVERTED`, `RPC_ERROR` | — | Jelaskan alasan dan langkah berikutnya |
-
-RupaError menyimpan code stabil, pesan pengguna, cause untuk debug yang sudah disanitasi, dan metadata aman seperti txHash. Jangan bergantung pada string revert provider yang berubah-ubah.
-
-## Reputasi
-
-Pemilihan agent memfilter chain, schema/type support, endpoint sehat, dan identitas valid; kemudian memakai summary dari evaluator yang telah dipilih. Tie-break deterministik memakai agentId. Nilai count=0 berarti belum dinilai. Jangan menyatakan semua registered app admins merupakan jaringan anti-sybil. Pembatasan self-feedback dan perubahan wallet identity harus mengikuti ABI deployment yang diverifikasi.
+The SDK hashes content independently, including custom content adapters. The service signs only validated rules, but registry acceptance alone does not prove semantic validity; other agents are permissionless. Both agent and SDK validate actual output on every use. See [DSL](mapping-dsl.md) and [security](security.md).

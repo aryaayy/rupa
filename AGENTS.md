@@ -15,7 +15,7 @@ Baca `RUPA-HANDOFF.md`, `docs/handoff-review.md`, `docs/prd.md`, dan `docs/decis
 
 Ikuti M0–M10 di `docs/implementation-plan.md`. Mulai dari verifikasi dependency dan passkey, lalu kontrak, agent, SDK, aplikasi. Jangan menandai milestone selesai tanpa evidence di `docs/verification-notes.md` atau artefak pengujian yang relevan.
 
-Source lima kontrak, helper SDK, alat capture browser, dan tests lokal tersedia. M0 belum selesai: lockfile pnpm, clean install, CI, secret scan, dan verifikasi dependency live belum terbukti. Periksa status di `docs/verification-notes.md`; jangan membuat hasil test, alamat kontrak, agent ID, atau live link fiktif.
+Pengguna mengonfirmasi M0–M2, 42 tests kontrak, fork tests, dan approval Windows Hello pada deployment Monad yang tercatat. SDK/DSL/agent serta consumer demo sekarang tersedia; E2E baru, clean install, CI, dan secret scan mempunyai gate terpisah di `docs/verification-notes.md`. Jangan membuat evidence, app ID, agent ID, atau link fiktif. Jangan mengubah/redeploy lima kontrak live; jika ada blocking bug, berhenti dan laporkan.
 
 ## Implementasi
 

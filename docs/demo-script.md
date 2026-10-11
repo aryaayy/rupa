@@ -1,6 +1,10 @@
 # Demo, pitch, dan submission
 
-Status: rencana produksi materi; belum ada live app, rekaman, logo, atau submission. Deadline 13 Oktober 2026 berasal dari handoff; jam dan timezone resmi masih perlu dipastikan.
+Status: core deployment dan Windows Hello dikonfirmasi pengguna. UI/agent baru sudah dibuat tetapi belum di-rollout; belum ada rekaman/submission dari pekerjaan ini. Deadline 13 Oktober 2026 berasal dari handoff; jam dan timezone resmi masih perlu dipastikan.
+
+## Perilaku build saat ini
+
+Demo lokal default memakai mock LLM dan inline canonical JSON. Social dan Gallery pada chain baru masing-masing meminta rule; Gallery tidak otomatis cache hit karena Social. Untuk rekaman live-AI/cached-Gallery di bawah, operator harus memilih provider dan mempersiapkan pasangan Gallery terlebih dahulu. Initial mint mencatat nol Used(WIN); victory berikutnya menambah WIN. Jangan mengklaim provider live saat mode mock.
 
 ## Prasyarat rekaman demo
 

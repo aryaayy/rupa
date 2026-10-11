@@ -1,92 +1,58 @@
-# Panduan development lokal
+# Development
 
-Status: scaffold, lima kontrak, helper SDK, dan alat capture passkey tersedia. DSL, agent service, serta demo Arena/Social/Gallery belum dibangun. Deployment tetap ditunda. Hasil pengujian dan batasan environment ada di [verification notes](verification-notes.md).
+The SDK, mapping DSL, agent and all five web routes are implemented. Existing Monad contracts and the original WebAuthn helpers are unchanged. See [verification notes](verification-notes.md) for executed checks and environment blockers.
 
-## Toolchain dan instalasi
+## Toolchain
 
-- Node 24.21.0 (`.nvmrc`), pnpm 10.20.0 (`packageManager`).
-- Foundry 1.8.4, compiler Solidity 0.8.24, EVM target Cancun.
-- TypeScript 5.9.3, viem 2.57.4, OpenZeppelin Contracts 5.6.1, Vite 8.3.4, Vitest 5.0.3; versi dipin pada manifest.
-- Browser secure context dengan WebAuthn ES256, user verification, dan `getAuthenticatorData()` untuk capture.
-
-Dengan jaringan npm tersedia, jalankan dari root:
+Node 24.21.0, pnpm 10.20.0, Foundry 1.8.4, Solidity 0.8.24/Cancun, TypeScript 5.9.3, viem 2.57.4, OpenZeppelin 5.6.1, Ajv 8.20.0, Vite 8.3.4, Vitest 5.0.3 and Playwright 1.63.0 are pinned. Commit the lockfile; use `pnpm install --frozen-lockfile` on a clean checkout.
 
 ```bash
-corepack enable
-pnpm install
-pnpm check
-pnpm build
-pnpm dev
+pnpm install --frozen-lockfile
+pnpm demo
 ```
 
-`pnpm-lock.yaml` belum tersedia karena bootstrap di sandbox tidak dapat mengakses registry npm. Instalasi pertama harus menghasilkan lockfile, kemudian review dan commit lockfile tersebut. Setelah itu gunakan `pnpm install --frozen-lockfile`, termasuk pada clean checkout. Jangan menganggap install dari cache lokal membuktikan reproduksibilitas clean install.
+Open http://localhost:5173. WebAuthn needs localhost or HTTPS, not an IP hostname. The demo starts Anvil (8545), the Node agent (8787), and Vite (5173), creates disposable contracts/apps, and writes only public configuration to ignored `.local/deployment.json`. Stop with Ctrl-C. Restarting resets local chain state; use a fresh browser tab to discard stale burner credentials.
 
-Halaman lokal adalah **alat capture passkey**. Buka `http://localhost:5173` secara konsisten; server mendengarkan `127.0.0.1:5173` dengan port tetap. Membuat credential pada halaman ini belum mendaftarkan key onchain dan belum melakukan port. Gunakan credential uji dan review JSON publik sebelum menyimpannya di `contracts/test/vectors/`.
+The local chain has ID 31337. It uses an identity fixture and the existing P256 Solidity verifier at 0x0100, which performs real signature math. `RUPA_LOCAL_FORK_RPC_URL` optionally forks upstream state, but all transactions still go to disposable Anvil. This is not evidence for Monad's native precompile.
 
-## Struktur implementasi
+## Commands
 
-```text
-contracts/src/          AppRegistry, RupaAsset, MappingRegistry, PasskeyApprover, PortLedger
-contracts/test/         Unit, fuzz, integration, encoding vectors
-contracts/test/fork/    Suite dependency fork yang memerlukan RPC
-packages/sdk/src/       Approval hash, DER/COSE, browser capture, provenance
-apps/web/src/           Antarmuka capture passkey
-scripts/               Encoding fixture, fork runner, direct RPC checks
-.github/workflows/     CI checks/build dan secret scan
-```
-
-Package DSL dan service agent akan ditambahkan pada M5. ABI lokal berasal dari `forge build --root contracts`; adapter SDK lengkap belum tersedia. Jangan menulis adapter produksi dari ABI upstream yang belum diverifikasi terhadap deployment.
-
-## Command yang tersedia
-
-| Command dari root | Tujuan |
+| Command | Purpose |
 | --- | --- |
-| `pnpm dev` | Server alat capture passkey, port 5173 |
-| `pnpm build` | Build package SDK dan web melalui workspace |
-| `pnpm typecheck` | Strict TypeScript checks |
-| `pnpm test` | Tests SDK non-network dengan Vitest |
-| `pnpm test:contracts` | Foundry unit/fuzz/integration, mengecualikan suite fork |
-| `pnpm check:format` | Foundry formatting check |
-| `pnpm check` | Typecheck, SDK tests, contract tests, formatting |
-| `pnpm test:fork` | Dependency fork; memerlukan `MONAD_RPC_URL` |
-| `pnpm verify:monad` | Direct RPC chain/code dan native P256 valid/invalid vectors |
-| `pnpm check:secrets` | Scan working tree; memerlukan executable gitleaks |
+| pnpm dev | Build SDK dependencies, start web on localhost |
+| pnpm dev:agent | Build SDK/agent, run configured service with root .env |
+| pnpm demo | Start complete disposable local demo without provider keys |
+| pnpm setup:demo | Register consumer apps and agent on existing Monad contracts; sends transactions |
+| pnpm build | Build DSL, SDK, service and web |
+| pnpm check | Package build, strict typecheck, Vitest, Foundry unit/fuzz/rehearsal, Solidity formatting |
+| pnpm test:e2e | Build and run Chromium virtual-authenticator flow through local Anvil |
+| pnpm test:fork | Read upstream registry state via MONAD_RPC_URL |
+| pnpm verify:monad | Direct RPC chain/code and native P256 checks |
+| pnpm generate:contracts | Regenerate SDK ABIs and manifest export from local build |
+| pnpm check:secrets | Working-tree gitleaks scan; requires installed executable |
 
-Belum ada script lint TypeScript. CI telah ditulis tetapi belum dijalankan di GitHub; sementara lockfile belum ada, workflow melakukan bootstrap install, lalu menegakkan frozen install ketika lockfile tersedia.
+Before E2E, run `pnpm exec playwright install chromium` (or `--with-deps chromium` on CI Linux). Ports 5173, 8787 and 8545 must be free. Playwright launches its own local stack; do not run `pnpm demo` simultaneously. Tracing is disabled because browser storage contains a temporary private key. Failure screenshots contain only public UI.
 
-Unit crypto tests memakai verifier P256 OpenZeppelin yang di-etch di `0x0100`. Fork Foundry juga menjalankan EVM lokal; keberhasilan fork tidak membuktikan native precompile Monad. Gunakan direct `eth_call` untuk pemeriksaan native:
+CI enforces the lockfile, checks, builds, browser E2E, a separate fork job, and gitleaks. The workflow has been written but has not run on GitHub for this working tree. RPC availability is an external dependency of the fork job.
 
-```bash
-MONAD_RPC_URL=https://testnet-rpc.monad.xyz pnpm verify:monad
-MONAD_RPC_URL=https://testnet-rpc.monad.xyz pnpm test:fork
-```
+## Configuration and Git
 
-Argumen path JSON pada `pnpm verify:monad <fixture>` menambahkan pemeriksaan signature dari capture publik. Itu masih bukan bukti lengkap registration/nonce/port pada testnet. Kedua script gagal eksplisit bila RPC belum dikonfigurasi; tidak ada hasil mock yang dilabeli PASS testnet.
+Only `dev:agent` and `setup:demo` load root `.env` automatically. Export variables for the RPC/fork commands. Vite uses its normal app env files or build environment; `VITE_AGENT_URL` defaults to `/api`, proxied locally to localhost:8787. Production needs the public hosted agent URL.
 
-## Environment dan Git
+All secret values remain server-side. The existing deployer's key is neither required for consumer registration nor requested. See [deployment](deployment.md) for separate demo/agent signers.
 
-`.env.example` berisi nilai kosong. `.gitignore` mengabaikan env lokal, dependency, credential storage, output build, dan cache. Script RPC membaca environment proses; file `.env` tidak dimuat otomatis olehnya. Frontend tidak membutuhkan secret untuk capture. Konfigurasi live nanti mengikuti [deployment runbook](deployment.md).
-
-Repository Git sekarang tersedia, `main` melacak `origin/main` pada `https://github.com/aryaayy/rupa.git`. Ikuti [CONTRIBUTING](../CONTRIBUTING.md) untuk identitas kontributor manusia dan Conventional Commits. Development ini belum di-commit/push.
-
-Hook `.githooks/pre-commit` memindai staged changes dengan gitleaks dan menolak commit jika scanner tidak tersedia. Setelah menginstal gitleaks, aktifkan hook pada clone lokal:
-
-```bash
-git config core.hooksPath .githooks
-pnpm check:secrets
-```
-
-Hook belum diaktifkan oleh proses bootstrap ini; gitleaks juga belum tersedia dalam sandbox. Sebelum commit: jalankan checks relevan, scan secret, review diff, dan perbarui evidence. Perubahan prose cukup diperiksa tautan dan konsistensinya.
+This task's author and committer must both be `Arya Aydin Margono <134766828+aryaayy@users.noreply.github.com>`; use focused Conventional Commits on a branch such as `feat/sdk-port`, no co-author trailer, and no push. Repository-wide contribution rules remain in [CONTRIBUTING](../CONTRIBUTING.md). This environment exposes Git metadata read-only, so branch creation and local commits are blocked; do not change permissions or create an alternate repository to bypass that restriction.
 
 ## Troubleshooting
 
-| Gejala | Langkah |
+| Symptom | Next step |
 | --- | --- |
-| pnpm tidak tersedia atau npm `EAI_AGAIN` | Gunakan environment yang dapat mengunduh package manager/dependency; lockfile tetap gate M0 |
-| Server gagal bind dengan `EPERM` | Jalankan `pnpm dev` di terminal lokal yang mengizinkan port; sandbox saat bootstrap melarang bind |
-| `cast code 0x0100` kosong | Uji known-good P256 melalui `eth_call`; code check bukan bukti precompile |
-| Passkey ditolak | Periksa origin, RP ID, secure context, UV, credential ID, dan serialization yang didukung |
-| `UNSUPPORTED_CLIENT_DATA` | Simpan capture publik untuk evaluasi kompatibilitas; jangan melewati pemeriksaan origin/challenge |
-| Provenance gagal | Periksa kelengkapan/urutan records, timestamp block, asset ID, ABI encoding, dan head |
+| WebAuthn origin/RP error | Use the exact manifest origin; Monad credentials cannot be used for local Anvil |
+| Demo service unavailable | Register real app/agent IDs, set runtime manifest and VITE_AGENT_URL; inspect server health |
+| Fork DNS failure | Retry in a network-enabled environment; do not substitute a mock result |
+| Anvil Operation not permitted | Run outside an environment that forbids listening sockets |
+| TX_STATUS_UNKNOWN | Inspect the returned hash before retry/restart |
+| No gitleaks executable | Install gitleaks, then run the secret scan and hook |
+| Very slow history scan | Record the verified deployment block and use an archive-capable RPC |
 
-Jangan mengubah security check untuk melewati masalah demo. Rekam input aman dan failure reason, lalu tambah test yang menangkap kegagalan sebenarnya.
+Do not weaken passkey, hash, schema, nonce or owner checks to make a demo pass.
