@@ -56,7 +56,8 @@ export function createRupa(config: RupaConfig) {
     return value;
   };
   const webauthn = config.webauthn ?? { create: createPasskey, get: requestAssertion };
-  const range = config.logRange ?? 1000n;
+  // Monad's public RPC rejects eth_getLogs spans above 100 blocks (-32614).
+  const range = config.logRange ?? 100n;
   if (range < 1n || range > 50_000n || !Number.isSafeInteger(deployment.chainId) || Object.values(addresses).some(address => !isAddress(address))) throw new RupaError("INVALID_REQUEST", "Invalid chain, contract address, or log range.");
   let firstBlock: bigint | undefined = deployment.deploymentBlock == null ? undefined : BigInt(deployment.deploymentBlock);
   if (firstBlock !== undefined && firstBlock < 0n) throw new RupaError("INVALID_REQUEST", "Invalid deployment block.");
@@ -85,7 +86,10 @@ export function createRupa(config: RupaConfig) {
   }
   async function scan<T extends { blockNumber: bigint | null; logIndex: number | null; blockHash: Hex | null; removed: boolean }>(tip: bigint, request: (fromBlock: bigint, toBlock: bigint) => Promise<T[]>): Promise<T[]> {
     const found: T[] = [];
-    for (let from = await startBlock(tip); from <= tip; from += range) found.push(...await request(from, from + range - 1n > tip ? tip : from + range - 1n));
+    const chunks: [bigint, bigint][] = [];
+    for (let from = await startBlock(tip); from <= tip; from += range) chunks.push([from, from + range - 1n > tip ? tip : from + range - 1n]);
+    // Small fixed concurrency keeps 100-block scans fast without tripping public RPC rate limits.
+    for (let i = 0; i < chunks.length; i += 4) for (const logs of await Promise.all(chunks.slice(i, i + 4).map(([from, to]) => request(from, to)))) found.push(...logs);
     if (found.some(log => log.removed || log.blockNumber === null || log.blockHash === null || log.logIndex === null)) throw new RupaError("PROVENANCE_INVALID", "Incomplete or removed event log.");
     const unique = [...new Map(found.map(log => [`${log.blockHash}:${log.logIndex}`, log])).values()];
     return unique.sort((a, b) => a.blockNumber! < b.blockNumber! ? -1 : a.blockNumber! > b.blockNumber! ? 1 : a.logIndex! - b.logIndex!);

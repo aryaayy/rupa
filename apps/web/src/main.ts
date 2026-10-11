@@ -74,7 +74,11 @@ function status(message: string) { notice = message; const node = document.query
 async function run(action: () => Promise<void>) {
   if (busy) return;
   busy = true; failure = ""; render();
-  try { await action(); await refresh(); }
+  try {
+    await action();
+    // The action already succeeded; a failed balance/asset refresh must not report it as failed.
+    try { await refresh(); } catch { status(`${notice} Balance refresh failed; reload to update.`); }
+  }
   catch (error) {
     failure = error instanceof RupaError ? `${error.code}: ${error.message}${error.txHash ? ` Transaction: ${error.txHash}` : ""}` : error instanceof Error ? error.message : "Unable to complete the action.";
     notice = "That action did not complete. See the error below.";

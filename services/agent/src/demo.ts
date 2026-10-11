@@ -76,7 +76,10 @@ export function createDemoAccess(options: { origin: string; chainId: number; act
       const s = session(token, ip);
       if (!s.won) throw new RupaError("INVALID_REQUEST", "Win the server-confirmed duel first.");
       rate.take(`reward:${s.address.toLowerCase()}`, 10, 3_600_000); rate.take("reward:global", 100, 3_600_000);
-      s.won = false; return options.actions.reward(s.address);
+      // Hold the win while the mint is in flight; give it back if the reward did not land.
+      s.won = false;
+      try { return await options.actions.reward(s.address); }
+      catch (error) { s.won = true; throw error; }
     },
   };
 }

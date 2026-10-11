@@ -62,6 +62,13 @@ describe("deployment and SDK client", () => {
   it("exports exactly the supplied deployment manifest", async () => {
     expect(monadTestnetDeployment).toEqual(JSON.parse(await readFile(new URL("../../../deployments/monad-testnet.json", import.meta.url), "utf8")));
   });
+  it("keeps eth_getLogs spans within the 100-block Monad RPC limit by default", async () => {
+    const f = fixture();
+    f.publicClient.getBlock.mockImplementation(async () => ({ number: 450n, hash: blockHash, timestamp: 100n }));
+    await createRupa(f.config).getAssetsFor(owner, 2);
+    const spans = f.publicClient.getContractEvents.mock.calls.map(([call]) => call as unknown as { eventName: string; fromBlock: bigint; toBlock: bigint }).filter(call => call.eventName === "Transfer");
+    expect(spans.map(call => [call.fromBlock, call.toBlock])).toEqual([[0n, 99n], [100n, 199n], [200n, 299n], [300n, 399n], [400n, 450n]]);
+  });
   it("deduplicates discovery, checks live owners, and evaluates a cached mapping", async () => {
     const f = fixture();
     const assets = await f.rupa.getAssetsFor(owner, 2);

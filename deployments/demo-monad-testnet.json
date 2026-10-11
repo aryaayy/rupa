@@ -1,0 +1,41 @@
+{
+  "network": "monad-testnet",
+  "chainId": 10143,
+  "rpcUrl": "https://testnet-rpc.monad.xyz",
+  "explorerUrl": "https://testnet.monadscan.com",
+  "rpId": "rupa-mu.vercel.app",
+  "origin": "https://rupa-mu.vercel.app",
+  "admin": "0x91b066AAaD3787518350E3b98d365080935c5fC8",
+  "deploymentBlock": "70142209",
+  "contracts": {
+    "AppRegistry": "0x5c4844D52fFC7C0da41E327bF5669B77cb794998",
+    "RupaAsset": "0x158E35817C8a5331FB74dF6F469dAD1fF345E8fa",
+    "MappingRegistry": "0xc76290e99f8F0CBCd3Fe4AC7c2F7FE5202B9d31D",
+    "PasskeyApprover": "0x89D710fb3a50fc552c806F04E7cE977614b25aA3",
+    "PortLedger": "0xcc42457f4Ae0B847fa84A7F5b8E1af4BaEF11C85"
+  },
+  "identityRegistry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+  "reputationRegistry": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+  "apps": {
+    "arena": 1,
+    "social": 2,
+    "gallery": 3
+  },
+  "agents": [],
+  "verification": {
+    "source": "v3 redeploy Oct 11, 2026 (WebAuthnLib accepts Chromium extra clientDataJSON keys after crossOrigin:false); tester verified contracts, fork tests, E2E 6/6, and Windows Hello approval",
+    "transactionHashes": [
+      "0xcb239da7da3285b8cb0ae1116dc4b076eb5273d68fc07cb1883bdbeea76bd78b",
+      "0x8cbac826875aa4958a10057bb5316a051d858f4dcd5f91bda0a26fe5138498f5",
+      "0xd211ad0a4ca169be913a41e7102bbd73652f9b24399ad22d94b33b5b0d4fa15e",
+      "0xe9e1eef49a5c23c60be9947bf1b20da7e511d3a164228b4c257305766e1f0639",
+      "0x631f20bb3c5fd1b4c55c771f52c364f83aa29944ab189d8b4db3697767535c8f",
+      "0xd702a829358088868ab43ac464b9c67de781c259894f4f51b7f076a16fed80e7",
+      "0xca868982ed9799b1240636137b3b7b23c783b02e78414873083feec1dabbb139"
+    ]
+  },
+  "agentId": "2186",
+  "demoAdmin": "0x91b066AAaD3787518350E3b98d365080935c5fC8",
+  "agentWallet": "0x97cB633bBA8c2eaa58Fd93110DE7B883E3545E04",
+  "agentUrl": "https://rupa-agent.onrender.com"
+}

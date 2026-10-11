@@ -88,4 +88,14 @@ describe("agent HTTP boundary", () => {
     f.translate.mockRejectedValueOnce(new RupaError("TX_STATUS_UNKNOWN", "Submitted", { txHash: zeroHash }));
     expect(await (await f.request('{"assetId":"1","targetAppId":2}')).json()).toMatchObject({ error: { code: "TX_STATUS_UNKNOWN", txHash: zeroHash } });
   });
+  it("keeps the victory when the reward transaction fails", async () => {
+    const f = fixture(), s = await f.login();
+    f.demo.start(s.token, "test-peer");
+    for (const move of ["strike", "guard", "strike"]) f.demo.play(s.token, "test-peer", move);
+    f.actions.reward.mockRejectedValueOnce(new Error("rpc down"));
+    await expect(f.demo.reward(s.token, "test-peer")).rejects.toThrow("rpc down");
+    await expect(f.demo.reward(s.token, "test-peer")).resolves.toMatchObject({ minted: true });
+    await expect(f.demo.reward(s.token, "test-peer")).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    expect(f.actions.reward).toHaveBeenCalledTimes(2);
+  });
 });
