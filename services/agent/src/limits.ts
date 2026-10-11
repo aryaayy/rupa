@@ -15,6 +15,12 @@ export class RateLimiter {
     if (value.count >= limit) throw new RupaError("RATE_LIMITED", "Request limit reached. Try later.");
     value.count++;
   }
+  /** All-or-nothing: consumes every slot only if none of the limits is exhausted. */
+  takeAll(specs: readonly [key: string, limit: number, windowMs: number][]) {
+    const now = this.now();
+    for (const [key, limit] of specs) { const value = this.entries.get(key); if (value && value.until > now && value.count >= limit) throw new RupaError("RATE_LIMITED", "Request limit reached. Try later."); }
+    for (const spec of specs) this.take(...spec);
+  }
 }
 
 export function serialQueue() {

@@ -34,14 +34,46 @@ describe("demo access", () => {
     const expired = f.demo.challenge(a.address, "peer"); f.advance(120_001);
     await expect(f.demo.authenticate(expired.nonce, await a.signMessage({ message: expired.message }), "peer")).rejects.toMatchObject({ code: "INVALID_REQUEST" });
   });
-  it("deduplicates faucet retries including unknown transaction outcomes and caps spending per IP", async () => {
+  it("deduplicates faucet retries including unknown transaction outcomes; many wallets on one IP are served", async () => {
     const f = fixture(), s = await f.login();
     f.actions.fund.mockRejectedValueOnce(new RupaError("TX_STATUS_UNKNOWN", "Submitted", { txHash: zeroHash }));
     for (let i = 0; i < 2; i++) await expect(f.demo.fund(s.token, "test-peer")).rejects.toMatchObject({ code: "TX_STATUS_UNKNOWN" });
     expect(f.actions.fund).toHaveBeenCalledOnce();
-    for (let i = 0; i < 2; i++) await f.demo.fund((await f.login()).token, "test-peer");
-    await expect(f.demo.fund((await f.login()).token, "test-peer")).rejects.toMatchObject({ code: "RATE_LIMITED" });
+    for (let i = 0; i < 5; i++) await f.demo.fund((await f.login()).token, "test-peer");
+    expect(f.actions.fund).toHaveBeenCalledTimes(6);
+    await expect(f.demo.fund((await f.login()).token, "test-peer")).rejects.toMatchObject({ code: "RATE_LIMITED" }); // 6/h per IP
+  });
+  it("drain simulation: a wallet that keeps emptying itself is blocked after 2 refills per 30 min", async () => {
+    let now = 0; const f = fixture();
+    const demo = createDemoAccess({ origin: "http://localhost:5173", chainId: 31337, now: () => now, actions: { ...f.actions, balanceLow: async () => true } });
+    const s = await f.login(); const c = demo.challenge(s.account.address, "peer");
+    const token = (await demo.authenticate(c.nonce, await s.account.signMessage({ message: c.message }), "peer")).token;
+    await demo.fund(token, "peer"); await demo.fund(token, "peer"); // moves MON out after each refill
+    await expect(demo.fund(token, "peer")).rejects.toMatchObject({ code: "RATE_LIMITED" });
+    expect(f.actions.fund).toHaveBeenCalledTimes(2);
+    now += 30 * 60_000 + 1;
+    await demo.fund(token, "peer");
     expect(f.actions.fund).toHaveBeenCalledTimes(3);
+  });
+  it("refused requests (balance high or another limit hit) consume no slots", async () => {
+    let low = false; const f = fixture();
+    const demo = createDemoAccess({ origin: "http://localhost:5173", chainId: 31337, faucet: { globalPerHour: 1 }, actions: { ...f.actions, balanceLow: async () => low } });
+    const login = async (ip: string) => { const s = await f.login(); const c = demo.challenge(s.account.address, ip); return (await demo.authenticate(c.nonce, await s.account.signMessage({ message: c.message }), ip)).token; };
+    const a = await login("a");
+    for (let i = 0; i < 3; i++) await expect(demo.fund(a, "a")).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    low = true;
+    await demo.fund(a, "a"); // global slot was still free
+    await expect(demo.fund(await login("b"), "b")).rejects.toMatchObject({ code: "RATE_LIMITED" });
+    expect(f.actions.fund).toHaveBeenCalledOnce();
+  });
+  it("caps faucet use per IP and globally (configurable)", async () => {
+    const f = fixture();
+    const demo = createDemoAccess({ origin: "http://localhost:5173", chainId: 31337, actions: f.actions, faucet: { perIp: 2, globalPerHour: 3 } });
+    const login = async (ip: string) => { const s = await f.login(); const c = demo.challenge(s.account.address, ip); return (await demo.authenticate(c.nonce, await s.account.signMessage({ message: c.message }), ip)).token; };
+    await demo.fund(await login("a"), "a"); await demo.fund(await login("a"), "a");
+    await expect(demo.fund(await login("a"), "a")).rejects.toMatchObject({ code: "RATE_LIMITED" });
+    await demo.fund(await login("b"), "b");
+    await expect(demo.fund(await login("c"), "c")).rejects.toMatchObject({ code: "RATE_LIMITED" });
   });
   it("only rewards one server-confirmed victory and limits global faucet use", async () => {
     const f = fixture(), s = await f.login();
@@ -53,9 +85,9 @@ describe("demo access", () => {
     await f.demo.reward(s.token, "test-peer");
     await expect(f.demo.reward(s.token, "test-peer")).rejects.toMatchObject({ code: "INVALID_REQUEST" });
     expect(f.actions.reward).toHaveBeenCalledOnce();
-    for (let i = 0; i < 20; i++) { const peer = `peer-${i}`; await f.demo.fund((await f.login(peer)).token, peer); }
+    for (let i = 0; i < 10; i++) { const peer = `peer-${i}`; await f.demo.fund((await f.login(peer)).token, peer); }
     await expect(f.demo.fund((await f.login("last-peer")).token, "last-peer")).rejects.toMatchObject({ code: "RATE_LIMITED" });
-    expect(f.actions.fund).toHaveBeenCalledTimes(20);
+    expect(f.actions.fund).toHaveBeenCalledTimes(10);
   });
 });
 describe("agent HTTP boundary", () => {

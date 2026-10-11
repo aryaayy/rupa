@@ -2,7 +2,8 @@ import { createPublicClient, createWalletClient, defineChain, formatEther, http,
 import type { Address, Hex, PublicClient, WalletClient } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { claimReward } from "./reward.js";
-import { base64url, createRupa, monadTestnetDeployment, passkeyApproverAbi, RupaError } from "@rupa/sdk";
+import { failureText, hasFundsForPort, maxFeePerGas, isLowFunds, LOW_FUNDS_MESSAGE } from "./funds.js";
+import { base64url, createRupa, monadTestnetDeployment, passkeyApproverAbi, portLedgerAbi, RupaError } from "@rupa/sdk";
 import type { PortPreview, RegisteredPasskey, RupaAssetView, RupaDeployment } from "@rupa/sdk";
 import { mountCapture } from "./capture.js";
 import captureTemplate from "./capture-template.html?raw";
@@ -16,6 +17,7 @@ const esc = (value: unknown) => String(value).replace(/[&<>"']/g, c => ({ "&": "
 const short = (value: string) => `${value.slice(0, 6)}…${value.slice(-4)}`;
 let config: AppConfig | undefined, publicClient: PublicClient | undefined, walletClient: WalletClient | undefined;
 let passkey: RegisteredPasskey | undefined, session = "", balance = "0", registered = false;
+let lowFunds = false;
 let assets: RupaAssetView[] = [], busy = false, notice = "Choose a form. Keep what you own.", failure = "", move: string | null = null, won = false;
 let activeRoute = location.pathname.slice(1).split("/")[0] || "home";
 let loadEpoch = 0;
@@ -106,14 +108,14 @@ function refreshPendingWins(epoch: number, account: `0x${string}`, target: numbe
 function status(message: string) { notice = message; const node = document.querySelector("#notice"); if (node) node.textContent = message; }
 async function run(action: () => Promise<void>) {
   if (busy) return;
-  busy = true; failure = ""; render();
+  busy = true; failure = ""; lowFunds = false; render();
   try {
     await action();
     // The action already succeeded; a failed balance/asset refresh must not report it as failed.
     try { await refresh(); } catch { status(`${notice} Balance refresh failed; reload to update.`); }
   }
   catch (error) {
-    failure = error instanceof RupaError ? `${error.code}: ${error.message}${error.txHash ? ` Transaction: ${error.txHash}` : ""}` : error instanceof Error ? error.message : "Unable to complete the action.";
+    failure = failureText(error); lowFunds = isLowFunds(error);
     notice = "That action did not complete. See the error below.";
   } finally { busy = false; render(); }
 }
@@ -158,7 +160,7 @@ function developerPanel() {
 }
 function render() {
   root.setAttribute("aria-busy", String(busy));
-  root.innerHTML = `<header class="topbar"><a class="brand" href="/" data-route aria-label="Rupa home"><span class="brand-mark">r</span>rupa<span class="brand-period">.</span></a><nav aria-label="Main navigation">${["arena", "social", "gallery", "docs"].map(route => `<a href="/${route}" data-route ${activeRoute === route ? 'aria-current="page"' : ""}>${route[0]!.toUpperCase()}${route.slice(1)}</a>`).join("")}</nav><span class="network"><i></i>${config?.deployment.chainId === 31337 ? "Local demo" : "Monad testnet"}</span></header><main>${activeRoute === "home" ? landing() : activeRoute === "arena" ? arena() : activeRoute === "social" || activeRoute === "gallery" ? consumer(activeRoute) : activeRoute === "capture" ? captureTemplate : docs()}<div class="messages"><p id="notice" role="status" aria-live="polite">${esc(notice)}</p>${failure ? `<p class="error" role="alert">${esc(failure)}</p>` : ""}</div>${developerPanel()}</main><footer><span>Rupa · One asset. Every form.</span><a href="/capture" data-route>Passkey capture</a><a href="https://github.com/aryaayy/rupa" target="_blank" rel="noopener noreferrer">GitHub ↗</a></footer>`;
+  root.innerHTML = `<header class="topbar"><a class="brand" href="/" data-route aria-label="Rupa home"><span class="brand-mark">r</span>rupa<span class="brand-period">.</span></a><nav aria-label="Main navigation">${["arena", "social", "gallery", "docs"].map(route => `<a href="/${route}" data-route ${activeRoute === route ? 'aria-current="page"' : ""}>${route[0]!.toUpperCase()}${route.slice(1)}</a>`).join("")}</nav><span class="network"><i></i>${config?.deployment.chainId === 31337 ? "Local demo" : "Monad testnet"}</span></header><main>${activeRoute === "home" ? landing() : activeRoute === "arena" ? arena() : activeRoute === "social" || activeRoute === "gallery" ? consumer(activeRoute) : activeRoute === "capture" ? captureTemplate : docs()}<div class="messages"><p id="notice" role="status" aria-live="polite">${esc(notice)}</p>${lowFunds ? `<p class="error low-funds" role="alert">${esc(LOW_FUNDS_MESSAGE)} ${config?.faucet ? button("Get demo MON", "fund") : ""}</p>` : ""}${failure ? `<p class="error" role="alert">${esc(failure)}</p>` : ""}</div>${developerPanel()}</main><footer><span>Rupa · One asset. Every form.</span><a href="/capture" data-route>Passkey capture</a><a href="https://github.com/aryaayy/rupa" target="_blank" rel="noopener noreferrer">GitHub ↗</a></footer>`;
   if (activeRoute === "capture") mountCapture();
 }
 async function review(preview: PortPreview): Promise<boolean> {
@@ -184,6 +186,12 @@ root.addEventListener("click", event => {
     else if (action.startsWith("port:")) {
       if (!passkey || !config) throw new Error("Register a passkey first.");
       const target = config.apps[activeRoute as "social" | "gallery"];
+      // Check gas money before the passkey prompt so the user is not asked to approve a port that cannot pay.
+      if (publicClient && walletClient?.account) {
+        const client = publicClient, ledger = config.deployment.contracts.PortLedger;
+        const funds = await hasFundsForPort(await client.getBalance({ address: walletClient.account.address }), { gasPrice: () => maxFeePerGas({ estimateFees: () => client.estimateFeesPerGas(), gasPrice: () => client.getGasPrice() }), portFee: () => client.readContract({ address: ledger, abi: portLedgerAbi, functionName: "PORT_FEE" }) });
+        if (!funds.ok) throw new RupaError("INSUFFICIENT_FUNDS", `Not enough MON for gas. Need about ${formatEther(funds.needed)} MON. Get demo MON and try again.`);
+      }
       const labels = { "mapping:cached": "Using this app's cached mapping.", "mapping:requesting": "Requesting a reusable mapping rule…", "passkey:prompt": "Approve this port with your passkey.", "tx:sent": "Port submitted. Waiting for confirmation…", "tx:confirmed": "Port confirmed. Verifying provenance…" };
       await sdk().port(BigInt(action.slice(5)), target, passkey, { onReview: review, onStep: step => status(labels[step]) });
       status(`Relic is active in ${activeRoute === "social" ? "Social" : "Gallery"}. Ownership is unchanged.`);

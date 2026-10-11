@@ -6,8 +6,9 @@ import { RELIC_ATTRS, RELIC_TYPE_HASH } from "./demo.js";
 import type { DemoActions } from "./demo.js";
 import { serialQueue } from "./limits.js";
 
-export function createDemoActions(options: { publicClient: PublicClient; admin: WalletClient; funder?: WalletClient; deployment: RupaDeployment; arena: number; afterReward?: () => Promise<void> }): DemoActions {
+export function createDemoActions(options: { publicClient: PublicClient; admin: WalletClient; funder?: WalletClient; deployment: RupaDeployment; arena: number; afterReward?: () => Promise<void>; faucetAmount?: bigint; faucetMinBalance?: bigint }): DemoActions {
   const { publicClient: client, admin, deployment: d } = options;
+  const faucetAmount = options.faucetAmount ?? parseEther("0.2"), faucetMin = options.faucetMinBalance ?? parseEther("0.15");
   const queue = serialQueue(), sdk = createRupa({ publicClient: client, deployment: d });
   // Transactions whose outcome is not yet known, keyed by action. Recorded BEFORE broadcast so a send error
   // that hides an accepted transaction can never lead to a second mint. While any transaction of a signer is
@@ -80,13 +81,13 @@ export function createDemoActions(options: { publicClient: PublicClient; admin: 
     return undefined;
   }
   return {
-    ...(options.funder ? { fund: (address: Address) => queue(async () => {
+    ...(options.funder ? { balanceLow: async (address: Address) => await client.getBalance({ address }) < faucetMin, fund: (address: Address) => queue(async () => {
       const wallet = options.funder!, account = ready(wallet), action = `fund:${address}`;
       const done = await reconcile(action);
       if (done) return { txHash: done.transactionHash };
       if (await client.getChainId() !== d.chainId || await wallet.getChainId() !== d.chainId) throw new RupaError("WRONG_CHAIN", "Faucet chain mismatch.");
-      if (await client.getBalance({ address }) >= parseEther("0.003")) throw new RupaError("INVALID_REQUEST", "This wallet already has enough demo gas.");
-      const hash = await send(wallet, { account, chain: wallet.chain ?? null, to: address, value: parseEther("0.01") }, action);
+      if (await client.getBalance({ address }) >= faucetMin) throw new RupaError("INVALID_REQUEST", "This wallet already has enough demo gas.");
+      const hash = await send(wallet, { account, chain: wallet.chain ?? null, to: address, value: faucetAmount }, action);
       await receipt(hash, action); return { txHash: hash };
     }) } : {}),
     reward: address => queue(async () => { const result = await rewardOnce(address); await options.afterReward?.().catch(() => undefined); return result; }),

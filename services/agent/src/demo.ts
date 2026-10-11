@@ -14,11 +14,17 @@ export function displaySchema(kind: "profile_badge" | "artwork"): JsonObject {
 }
 export interface DemoActions {
   fund?: (address: Address) => Promise<{ txHash: Hex }>;
+  balanceLow?: (address: Address) => Promise<boolean>;
   reward: (address: Address) => Promise<{ assetId: string; txHash: Hex; minted: boolean }>;
 }
 type Session = { address: Address; ip: string; expires: number; round: number; won: boolean };
 
-export function createDemoAccess(options: { origin: string; chainId: number; actions: DemoActions; now?: () => number }) {
+/** Faucet limits. Per wallet (not per IP) so many judges on one Wi-Fi are not blocked; balance is checked by the action. */
+export type FaucetLimits = { perWallet: number; walletWindowMs: number; perIp: number; globalPerHour: number };
+// Note: counters are in memory and reset when the agent restarts (e.g. Render free-tier sleep).
+export const DEFAULT_FAUCET_LIMITS: FaucetLimits = { perWallet: 2, walletWindowMs: 30 * 60_000, perIp: 6, globalPerHour: 10 };
+export function createDemoAccess(options: { origin: string; chainId: number; actions: DemoActions; now?: () => number; faucet?: Partial<FaucetLimits> }) {
+  const limits = { ...DEFAULT_FAUCET_LIMITS, ...options.faucet };
   const now = options.now ?? Date.now, rate = new RateLimiter(now);
   const challenges = new Map<string, { address: Address; ip: string; message: string; expires: number }>();
   const sessions = new Map<string, Session>();
@@ -57,9 +63,14 @@ export function createDemoAccess(options: { origin: string; chainId: number; act
       const s = session(token, ip), address = s.address.toLowerCase();
       if (!options.actions.fund) throw new RupaError("DEPENDENCY_UNAVAILABLE", "Demo faucet is disabled. Use the official Monad faucet.");
       const previous = funding.get(address); if (previous) return previous;
-      rate.take(`fund:${ip}`, 3, 3_600_000); rate.take("fund:global", 20, 3_600_000);
-      if (funding.size >= 1000) throw new RupaError("RATE_LIMITED", "Faucet lifetime capacity reached.");
-      const task = options.actions.fund(s.address); funding.set(address, task); return task;
+      // Balance first: a refused request (wallet already funded) must not consume any slot.
+      if (options.actions.balanceLow && !await options.actions.balanceLow(s.address)) throw new RupaError("INVALID_REQUEST", "This wallet already has enough demo gas.");
+      // The per-wallet limit always applies, so a wallet cannot drain the faucet by moving its MON out.
+      rate.takeAll([[`fund:wallet:${address}`, limits.perWallet, limits.walletWindowMs], [`fund:ip:${ip}`, limits.perIp, 3_600_000], ["fund:global", limits.globalPerHour, 3_600_000]]);
+      const task = options.actions.fund(s.address); funding.set(address, task);
+      // Only an unknown outcome stays pinned (retrying could spend twice); settled requests free the slot.
+      task.then(() => funding.delete(address), error => { if (!(error instanceof RupaError && error.code === "TX_STATUS_UNKNOWN")) funding.delete(address); });
+      return task;
     },
     start(token: string, ip: string) {
       const s = session(token, ip); rate.take(`duel:${s.address.toLowerCase()}`, 10, 3_600_000);

@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { createPublicClient, createWalletClient, defineChain, http, isAddress } from "viem";
+import { createPublicClient, createWalletClient, defineChain, http, isAddress, parseEther } from "viem";
 import type { Address, Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { monadTestnetDeployment } from "@rupa/sdk";
@@ -42,10 +42,14 @@ async function main() {
   const translator = createTranslator({ chain: translationChain, provider, publish, namespace: `${chain.id}:${manifest.contracts.MappingRegistry}`, types: { [RELIC_TYPE_HASH.toLowerCase()]: RELIC_TYPE } });
   const admin = process.env.DEMO_ADMIN_PRIVATE_KEY ? createWalletClient({ chain, transport: http(), account: privateKeyToAccount(secret("DEMO_ADMIN_PRIVATE_KEY")) }) : undefined;
   const funder = process.env.FAUCET_PRIVATE_KEY ? createWalletClient({ chain, transport: http(), account: privateKeyToAccount(secret("FAUCET_PRIVATE_KEY")) }) : undefined;
-  const demo = admin ? createDemoAccess({ origin: manifest.origin, chainId: manifest.chainId, actions: createDemoActions({ publicClient, admin, deployment: manifest, arena: appIds.arena, afterReward: () => wins.refresh(), ...(funder ? { funder } : {}) }) }) : undefined;
+  const mon = (name: string, fallback: string) => { const value = process.env[name] || fallback; if (!/^\d+(\.\d{1,18})?$/.test(value)) throw new Error(`Invalid ${name}.`); return parseEther(value); };
+  const count = (name: string, fallback: number) => { const value = Number(process.env[name] || fallback); if (!Number.isInteger(value) || value < 1) throw new Error(`Invalid ${name}.`); return value; };
+  const faucetAmount = mon("FAUCET_AMOUNT_MON", "0.2"), faucetMinBalance = mon("FAUCET_MIN_BALANCE_MON", "0.15");
+  const faucet = { globalPerHour: count("FAUCET_GLOBAL_PER_HOUR", 10), perIp: count("FAUCET_PER_IP_PER_HOUR", 6), perWallet: count("FAUCET_PER_WALLET_PER_30MIN", 2) };
+  const demo = admin ? createDemoAccess({ origin: manifest.origin, chainId: manifest.chainId, faucet, actions: createDemoActions({ faucetAmount, faucetMinBalance, publicClient, admin, deployment: manifest, arena: appIds.arena, afterReward: () => wins.refresh(), ...(funder ? { funder } : {}) }) }) : undefined;
   const app = createAgentApp({ config: { deployment: manifest, apps: appIds, agentId: agentId.toString(), llmMode: mode, faucet: !!funder && !!admin }, translator, wins, ...(demo ? { demo } : {}) });
   const server = nodeServer(app), port = Number(process.env.AGENT_PORT || "8787");
   server.on("error", () => { console.error("Agent HTTP server could not start."); process.exitCode = 1; });
   server.listen(port, process.env.AGENT_HOST || "localhost", () => console.log(`Rupa agent ready on port ${port}; LLM mode: ${mode}.`));
 }
-main().catch(error => { console.error(error instanceof Error && /^(Configure|Register|Invalid identity|LLM_PROVIDER|Set PINATA|Configured RPC)/.test(error.message) ? error.message : "Agent startup failed. Check server configuration and RPC connectivity."); process.exitCode = 1; });
+main().catch(error => { console.error(error instanceof Error && /^(Configure|Invalid FAUCET|Register|Invalid identity|LLM_PROVIDER|Set PINATA|Configured RPC)/.test(error.message) ? error.message : "Agent startup failed. Check server configuration and RPC connectivity."); process.exitCode = 1; });

@@ -86,3 +86,14 @@ it("re-checks an uncertain transaction on the next request and clears it once re
   expect(await a.reward(user)).toMatchObject({ minted: true });
   expect(admin.signTransaction).toHaveBeenCalledTimes(2); // pending: same bytes rebroadcast; reverted: one new tx
 });
+it("faucet sends the configured amount and refuses wallets at or above the threshold", async () => {
+  const funder = { ...admin, account: privateKeyToAccount(generatePrivateKey()) } as unknown as { prepareTransactionRequest: ReturnType<typeof vi.fn> };
+  Object.assign(client, { getBalance: vi.fn(async () => 0n), waitForTransactionReceipt: vi.fn(async () => ({ status: "success", transactionHash: hash, logs: [] })) });
+  const a = createDemoActions({ publicClient: client as unknown as PublicClient, admin: admin as unknown as WalletClient, funder: funder as unknown as WalletClient, deployment: d, arena: 1 });
+  await a.fund!(user);
+  expect(funder.prepareTransactionRequest).toHaveBeenCalledWith(expect.objectContaining({ value: 200_000_000_000_000_000n }));
+  expect(await a.balanceLow!(user)).toBe(true);
+  client.getBalance!.mockResolvedValue(150_000_000_000_000_000n);
+  expect(await a.balanceLow!(user)).toBe(false);
+  await expect(a.fund!(user)).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+});

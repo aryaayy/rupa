@@ -207,3 +207,28 @@ describe("win counts", () => {
     expect(f.publicClient.getContractEvents).not.toHaveBeenCalled();
   });
 });
+describe("error mapping", () => {
+  it("maps insufficient funds to INSUFFICIENT_FUNDS with detail", async () => {
+    const { InsufficientFundsError } = await import("viem");
+    const f = fixture(); vi.spyOn(console, "error").mockImplementation(() => {});
+    f.publicClient.getChainId.mockRejectedValue(new InsufficientFundsError());
+    await expect(f.rupa.getAssetsFor(owner, 2)).rejects.toMatchObject({ code: "INSUFFICIENT_FUNDS", message: "Not enough MON for gas. Get demo MON and try again." });
+    f.publicClient.getChainId.mockRejectedValue(new Error("insufficient funds for gas * price + value"));
+    await expect(f.rupa.getAssetsFor(owner, 2)).rejects.toMatchObject({ code: "INSUFFICIENT_FUNDS", detail: expect.stringContaining("insufficient funds") });
+  });
+  it("recognises Monad's insufficient-balance errors anywhere in the cause chain", async () => {
+    const { RpcRequestError, EstimateGasExecutionError, BaseError: ViemError } = await import("viem");
+    const f = fixture(); vi.spyOn(console, "error").mockImplementation(() => {});
+    const estimate = new EstimateGasExecutionError(new RpcRequestError({ body: {}, url: "https://rpc", error: { code: -32000, message: "insufficient balance" } }) as never, {} as never);
+    f.publicClient.getChainId.mockRejectedValue(estimate);
+    await expect(f.rupa.getAssetsFor(owner, 2)).rejects.toMatchObject({ code: "INSUFFICIENT_FUNDS" });
+    f.publicClient.getChainId.mockRejectedValue(new ViemError("Request failed", { cause: new Error("Signer had insufficient balance") }));
+    await expect(f.rupa.getAssetsFor(owner, 2)).rejects.toMatchObject({ code: "INSUFFICIENT_FUNDS" });
+  });
+  it("logs and attaches detail to wrapped RPC errors", async () => {
+    const f = fixture(), log = vi.spyOn(console, "error").mockImplementation(() => {});
+    f.publicClient.getChainId.mockRejectedValue(new Error("socket hang up"));
+    await expect(f.rupa.getAssetsFor(owner, 2)).rejects.toMatchObject({ code: "RPC_ERROR", detail: "socket hang up" });
+    expect(log).toHaveBeenCalled();
+  });
+});

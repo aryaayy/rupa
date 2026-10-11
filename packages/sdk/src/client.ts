@@ -1,6 +1,6 @@
 import { applyMapping, contentHash, MappingError, object, parseJson, parseMapping } from "@rupa/mapping-dsl";
 import type { JsonObject } from "@rupa/mapping-dsl";
-import { BaseError, ContractFunctionRevertedError, encodeAbiParameters, isAddress, keccak256, parseEventLogs, sha256, toBytes, zeroHash } from "viem";
+import { BaseError, ContractFunctionRevertedError, InsufficientFundsError, encodeAbiParameters, isAddress, keccak256, parseEventLogs, sha256, toBytes, zeroHash } from "viem";
 import type { Abi, Address, Hex, TransactionReceipt } from "viem";
 import { appRegistryAbi, mappingRegistryAbi, passkeyApproverAbi, portLedgerAbi, rupaAssetAbi } from "./abis.js";
 import { approvalHash } from "./approval.js";
@@ -30,6 +30,22 @@ function assetId(value: bigint): bigint {
   if (typeof value !== "bigint" || value < 1n || value >= 1n << 256n) throw new RupaError("INVALID_REQUEST", "Invalid asset ID.");
   return value;
 }
+/** Compact, single-line description of an RPC/viem error (shortMessage + details), bounded in length. */
+function describe(error: unknown): string {
+  const text = error instanceof BaseError ? [error.shortMessage, error.details].filter(Boolean).join(" — ") : error instanceof Error ? error.message : String(error);
+  return text.replace(/\s+/g, " ").slice(0, 300);
+}
+// viem/geth say "insufficient funds"; Monad says "insufficient balance" / "Signer had insufficient balance".
+const INSUFFICIENT = /insufficient (funds|balance)/i;
+function insufficient(error: unknown): boolean {
+  for (let current = error, depth = 0; current && depth < 10; current = (current as { cause?: unknown }).cause, depth++) {
+    if (current instanceof InsufficientFundsError) return true;
+    const e = current as { message?: unknown; shortMessage?: unknown; details?: unknown };
+    if ([e.message, e.shortMessage, e.details].some(text => typeof text === "string" && INSUFFICIENT.test(text))) return true;
+    if (typeof current === "string") return INSUFFICIENT.test(current);
+  }
+  return false;
+}
 function errorOf(error: unknown): RupaError {
   if (error instanceof RupaError) return error;
   if (error instanceof MappingError) return new RupaError("MAPPING_REJECTED", error.message);
@@ -41,7 +57,12 @@ function errorOf(error: unknown): RupaError {
       return new RupaError(code, `Contract rejected the request (${code}).`);
     }
   }
-  return new RupaError("RPC_ERROR", "Unable to complete the chain request. Retry after checking the connection.");
+  const detail = describe(error);
+  if (insufficient(error)) {
+    return new RupaError("INSUFFICIENT_FUNDS", "Not enough MON for gas. Get demo MON and try again.", { cause: error, detail });
+  }
+  console.error("[rupa] chain request failed", error);
+  return new RupaError("RPC_ERROR", "Unable to complete the chain request. Retry after checking the connection.", { cause: error, detail });
 }
 const safe = async <T>(action: () => Promise<T>): Promise<T> => { try { return await action(); } catch (error) { throw errorOf(error); } };
 
