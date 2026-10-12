@@ -16,10 +16,13 @@ For the existing Monad contracts, first follow [setup and hosting](../../docs/de
 | AGENT_HOST, AGENT_PORT | Defaults localhost and 8787; choose an external bind interface only on the host |
 | LLM_PROVIDER | mock (default) or openai-compatible |
 | LLM_BASE_URL, LLM_MODEL, LLM_API_KEY | HTTPS provider API base, explicit model, server credential |
+| LLM_TIMEOUT_MS, LLM_DEADLINE_MS, LLM_FALLBACK_MODEL | Per-attempt timeout (default 25s), one deadline for every attempt, fallback, and translator retry (default 55s), optional second model |
 | PINATA_JWT | Required by the live provider mode; optional in mock mode |
 | IPFS_GATEWAY | Optional read gateway; default https://ipfs.io/ipfs/ |
 | DEMO_ADMIN_PRIVATE_KEY | Optional app minter/admin for the demo game |
 | FAUCET_PRIVATE_KEY | Optional limited-balance faucet; requires demo admin actions |
+
+PORT or RENDER makes the agent bind to 0.0.0.0 unless AGENT_HOST is set.
 
 Mock mode returns rules with templates, enum maps and defaults, not a per-asset answer. It uses inline canonical JSON when no pinning credential is configured; this is explicitly a fixture storage mode. Live mode sends JSON-mode Chat Completions requests and pins the exact canonical file with Pinata. Neither paid-provider access nor pinning was exercised here. References: [Chat Completions](https://developers.openai.com/api/reference/resources/chat), [Pinata file upload](https://docs.pinata.cloud/api-reference/endpoint/ipfs/pin-file-to-ipfs).
 

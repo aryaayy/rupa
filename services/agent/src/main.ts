@@ -8,7 +8,7 @@ import { createTranslationChain } from "./chain.js";
 import { createDemoAccess, RELIC_TYPE, RELIC_TYPE_HASH } from "./demo.js";
 import { createDemoActions } from "./demo-chain.js";
 import { createWinIndex } from "./win-index.js";
-import { httpProvider, inlinePublisher, mockProvider, pinataPublisher } from "./provider.js";
+import { DEFAULT_LLM_DEADLINE_MS, DEFAULT_LLM_TIMEOUT_MS, httpProvider, inlinePublisher, mockProvider, pinataPublisher } from "./provider.js";
 import { createAgentApp, nodeServer } from "./server.js";
 import type { PublicConfig } from "./server.js";
 import { createTranslator } from "./translator.js";
@@ -33,14 +33,17 @@ async function main() {
   const count = (name: string, fallback: number) => { const value = Number(process.env[name] || fallback); if (!Number.isInteger(value) || value < 1) throw new Error(`Invalid ${name}.`); return value; };
   const mode = process.env.LLM_PROVIDER || "mock";
   if (mode !== "mock" && mode !== "openai-compatible") throw new Error("LLM_PROVIDER must be mock or openai-compatible.");
-  const provider = mode === "mock" ? mockProvider : httpProvider({ baseUrl: process.env.LLM_BASE_URL || "https://api.openai.com/v1/", apiKey: process.env.LLM_API_KEY || "", model: process.env.LLM_MODEL || "", ...(process.env.LLM_FALLBACK_MODEL ? { fallbackModel: process.env.LLM_FALLBACK_MODEL } : {}), timeoutMs: count("LLM_TIMEOUT_MS", 25_000) });
+  const timeoutMs = count("LLM_TIMEOUT_MS", DEFAULT_LLM_TIMEOUT_MS);
+  const deadlineMs = count("LLM_DEADLINE_MS", DEFAULT_LLM_DEADLINE_MS);
+  if (deadlineMs > DEFAULT_LLM_DEADLINE_MS) throw new Error("LLM_DEADLINE_MS must be at most 55000 so the agent answers before the browser times out.");
+  const provider = mode === "mock" ? mockProvider : httpProvider({ baseUrl: process.env.LLM_BASE_URL || "https://api.openai.com/v1/", apiKey: process.env.LLM_API_KEY || "", model: process.env.LLM_MODEL || "", ...(process.env.LLM_FALLBACK_MODEL ? { fallbackModel: process.env.LLM_FALLBACK_MODEL } : {}), timeoutMs, deadlineMs });
   if (mode !== "mock" && !process.env.PINATA_JWT) throw new Error("Set PINATA_JWT for live rule publication.");
   const publish = process.env.PINATA_JWT ? pinataPublisher(process.env.PINATA_JWT) : inlinePublisher;
   const winCounts = async (ids: readonly bigint[]) => { const { counts } = wins.query(ids); return new Map(ids.map(id => [id, counts[id.toString()]!] as const)); };
   const wins = createWinIndex({ publicClient, deployment: manifest });
   wins.start();
   const translationChain = createTranslationChain({ publicClient, walletClient: agent, deployment: manifest, agentId, identityRegistry, winCounts, ...(process.env.IPFS_GATEWAY ? { gateway: process.env.IPFS_GATEWAY } : {}) });
-  const translator = createTranslator({ chain: translationChain, provider, publish, namespace: `${chain.id}:${manifest.contracts.MappingRegistry}`, types: { [RELIC_TYPE_HASH.toLowerCase()]: RELIC_TYPE } });
+  const translator = createTranslator({ chain: translationChain, provider, publish, namespace: `${chain.id}:${manifest.contracts.MappingRegistry}`, types: { [RELIC_TYPE_HASH.toLowerCase()]: RELIC_TYPE }, deadlineMs });
   const admin = process.env.DEMO_ADMIN_PRIVATE_KEY ? createWalletClient({ chain, transport: http(), account: privateKeyToAccount(secret("DEMO_ADMIN_PRIVATE_KEY")) }) : undefined;
   const funder = process.env.FAUCET_PRIVATE_KEY ? createWalletClient({ chain, transport: http(), account: privateKeyToAccount(secret("FAUCET_PRIVATE_KEY")) }) : undefined;
   const mon = (name: string, fallback: string) => { const value = process.env[name] || fallback; if (!/^\d+(\.\d{1,18})?$/.test(value)) throw new Error(`Invalid ${name}.`); return parseEther(value); };
@@ -53,4 +56,4 @@ async function main() {
   server.on("error", () => { console.error("Agent HTTP server could not start."); process.exitCode = 1; });
   server.listen(port, host, () => console.log(`Rupa agent ready on port ${port}; LLM mode: ${mode}.`));
 }
-main().catch(error => { console.error(error instanceof Error && /^(Configure|Invalid FAUCET|Register|Invalid identity|LLM_PROVIDER|Set PINATA|Configured RPC)/.test(error.message) ? error.message : "Agent startup failed. Check server configuration and RPC connectivity."); process.exitCode = 1; });
+main().catch(error => { console.error(error instanceof Error && /^(Configure|Invalid FAUCET|Register|Invalid identity|LLM_PROVIDER|LLM_DEADLINE|Set PINATA|Configured RPC)/.test(error.message) ? error.message : "Agent startup failed. Check server configuration and RPC connectivity."); process.exitCode = 1; });
