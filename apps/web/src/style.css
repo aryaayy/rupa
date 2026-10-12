@@ -1051,7 +1051,7 @@ input:focus-visible {
 .wallet-panel,
 .form-grid>a {
     --ink: #2D2A4A;
-    --muted: #5A4FA0;
+    --muted: var(--deep);
     --line: #2D2A4A;
     color: var(--ink)
 }
@@ -1260,6 +1260,16 @@ p,
     color: var(--mint)
 }
 
+.panel .eyebrow,
+.asset-card .eyebrow,
+.guardian .eyebrow,
+.wallet-panel .eyebrow,
+.panel h1,
+.asset-card h1,
+.guardian h1 {
+    color: var(--deep)
+}
+
 .form-grid span {
     font: 400 8px var(--px);
     letter-spacing: 0
@@ -1327,6 +1337,10 @@ p,
     font: 400 8px var(--px);
     letter-spacing: 0;
     color: var(--lav)
+}
+
+.relic-art.gallery .art-index {
+    color: var(--deep)
 }
 
 
@@ -1425,7 +1439,7 @@ p,
 .provenance li span:not(.timeline-dot),
 .provenance a {
     font-size: 19px;
-    color: var(--lav)
+    color: var(--muted)
 }
 
 .empty-mark {
