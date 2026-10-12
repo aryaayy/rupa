@@ -7,7 +7,10 @@ import { base64url, createRupa, monadTestnetDeployment, passkeyApproverAbi, port
 import type { PortPreview, RegisteredPasskey, RupaAssetView, RupaDeployment } from "@rupa/sdk";
 import { mountCapture } from "./capture.js";
 import captureTemplate from "./capture-template.html?raw";
+import { slime, formArt } from "./forms.js";
+import { formPreview, mountFormPreview } from "./form-preview.js";
 import "./style.css";
+import "./polish.css";
 
 type AppConfig = { deployment: RupaDeployment; apps: { arena: number; social: number; gallery: number }; agentId: string; llmMode: string; faucet: boolean };
 const root = document.querySelector<HTMLDivElement>("#app")!;
@@ -21,6 +24,9 @@ let lowFunds = false;
 let assets: RupaAssetView[] = [], busy = false, notice = "Choose a form. Keep what you own.", failure = "", move: string | null = null, won = false;
 let activeRoute = location.pathname.slice(1).split("/")[0] || "home";
 let loadEpoch = 0;
+let disposePreview = () => {};
+let recentlyPorted: bigint | undefined;
+let portStage: number | undefined;
 
 async function api<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`${agentUrl}${path}`, { method: body === undefined ? "GET" : "POST", headers: { ...(body === undefined ? {} : { "content-type": "application/json" }), ...(session ? { authorization: `Bearer ${session}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(65_000) });
@@ -108,25 +114,23 @@ function refreshPendingWins(epoch: number, account: `0x${string}`, target: numbe
 function status(message: string) { notice = message; const node = document.querySelector("#notice"); if (node) node.textContent = message; }
 async function run(action: () => Promise<void>) {
   if (busy) return;
-  busy = true; failure = ""; lowFunds = false; render();
+  busy = true; failure = ""; lowFunds = false; recentlyPorted = undefined; portStage = undefined; render();
   try {
     await action();
     // The action already succeeded; a failed balance/asset refresh must not report it as failed.
     try { await refresh(); } catch { status(`${notice} Balance refresh failed; reload to update.`); }
   }
   catch (error) {
-    failure = failureText(error); lowFunds = isLowFunds(error);
+    failure = failureText(error); lowFunds = isLowFunds(error); portStage = undefined; recentlyPorted = undefined;
     notice = "That action did not complete. See the error below.";
-  } finally { busy = false; render(); }
+  } finally { busy = false; render(); recentlyPorted = undefined; }
 }
 function button(label: string, action: string, disabled = false, className = "") {
   return `<button class="${className}" data-action="${action}" ${busy || disabled ? "disabled" : ""}>${label}</button>`;
 }
-const sword = `<svg viewBox="0 0 16 16" shape-rendering="crispEdges" fill="none" aria-hidden="true"><g fill="#F4F0FF"><rect x="13" y="1" width="2" height="1"/><rect x="12" y="2" width="2" height="1"/><rect x="11" y="3" width="2" height="1"/><rect x="10" y="4" width="2" height="1"/><rect x="9" y="5" width="2" height="1"/><rect x="8" y="6" width="2" height="1"/><rect x="7" y="7" width="2" height="1"/><rect x="6" y="8" width="2" height="1"/><rect x="5" y="9" width="2" height="1"/></g><g fill="#D9CFFF"><rect x="14" y="2" width="1" height="1"/><rect x="13" y="3" width="1" height="1"/><rect x="12" y="4" width="1" height="1"/><rect x="11" y="5" width="1" height="1"/><rect x="10" y="6" width="1" height="1"/><rect x="9" y="7" width="1" height="1"/><rect x="8" y="8" width="1" height="1"/></g><g fill="#FF9CC8"><rect x="2" y="8" width="2" height="1"/><rect x="3" y="9" width="2" height="1"/><rect x="4" y="10" width="2" height="1"/><rect x="5" y="11" width="2" height="1"/><rect x="6" y="12" width="2" height="1"/></g><g fill="#FFF3A3"><rect x="3" y="11" width="2" height="1"/><rect x="2" y="12" width="2" height="1"/><rect x="1" y="13" width="2" height="1"/></g><rect x="0" y="14" width="2" height="2" fill="#8CF2D0"/></svg>`;
-const slime = (size = 80, color = "#FFF3A3") => `<svg class="slime" width="${size}" height="${Math.round(size * 10 / 14)}" viewBox="0 0 14 10" shape-rendering="crispEdges" aria-hidden="true"><g fill="${color}"><rect x="5" y="0" width="4" height="1"/><rect x="3" y="1" width="8" height="1"/><rect x="2" y="2" width="10" height="1"/><rect x="1" y="3" width="12" height="5"/><rect x="2" y="8" width="10" height="1"/></g><g fill="#F4F0FF"><rect x="3" y="2" width="2" height="1"/><rect x="2" y="3" width="1" height="1"/></g><g fill="#1B1933"><rect x="4" y="4" width="1" height="2"/><rect x="9" y="4" width="1" height="2"/><rect x="6" y="6" width="2" height="1"/></g></svg>`;
 function art(kind: string, color = "#F2673B") {
   const safeColor = ["#F2673B", "#4FC3F7", "#A49AFF"].includes(color) ? color : "#F2673B";
-  return `<div class="relic-art ${kind}" style="--relic-color:${safeColor}"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>${sword}<span class="art-index">R / 001</span></div>`;
+  return `<div class="relic-art ${kind}" style="--relic-color:${safeColor}"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>${formArt(kind)}<span class="art-index">R / 001</span></div>`;
 }
 function walletPanel() {
   const address = walletClient?.account?.address;
@@ -140,13 +144,13 @@ function timeline(asset: RupaAssetView) {
 function assetCard(asset: RupaAssetView, kind: string) {
   const title = asset.view?.title || asset.attrs.name || `Relic #${asset.assetId}`;
   const color = typeof asset.view?.color === "string" ? asset.view.color : "#F2673B";
-  return `<article class="asset-card" data-testid="asset-${asset.assetId}"><div>${art(kind, color)}<div class="asset-title"><span class="eyebrow">${esc(kind)} form · asset #${asset.assetId}</span><h2>${esc(title)}</h2><span class="pill">${esc(asset.status)}</span><span class="tier">${esc(asset.view?.tier || "gold")}</span></div></div><div class="asset-detail"><h3>Same relic. A new context.</h3><p>${kind === "social" ? "Your Arena relic becomes a profile badge. Its title follows your wins." : "An artwork with an origin you can trace. Every approved form stays connected."}</p>${asset.activation?.approvedByPreviousOwner ? '<p class="warning">This form was approved by a previous owner. You can approve it again.</p>' : ""}${asset.reason ? `<p class="muted">${esc(asset.reason)}</p>` : ""}${asset.status === "active" && !asset.activation?.approvedByPreviousOwner ? '<p class="active-state">Active in this app ✓</p>' : button(`Bring to ${kind === "social" ? "Social" : "Gallery"}`, `port:${asset.assetId}`, !passkey || asset.status === "unsupported")}${!passkey ? '<p class="fine">Register your passkey above before bringing this relic here.</p>' : ""}${timeline(asset)}</div></article>`;
+  return `<article class="asset-card ${recentlyPorted === asset.assetId ? "just-ported" : ""}" data-testid="asset-${asset.assetId}"><div>${art(kind, color)}<div class="asset-title"><span class="eyebrow">${esc(kind)} form · asset #${asset.assetId}</span><h2>${esc(title)}</h2><span class="pill">${esc(asset.status)}</span><span class="tier">${esc(asset.view?.tier || "gold")}</span></div></div><div class="asset-detail"><h3>Same relic. A new context.</h3><p>${kind === "social" ? "Your Arena relic becomes a profile badge. Its title follows your wins." : "An artwork with an origin you can trace. Every approved form stays connected."}</p>${asset.activation?.approvedByPreviousOwner ? '<p class="warning">This form was approved by a previous owner. You can approve it again.</p>' : ""}${asset.reason ? `<p class="muted">${esc(asset.reason)}</p>` : ""}${asset.status === "active" && !asset.activation?.approvedByPreviousOwner ? '<p class="active-state">Active in this app ✓</p>' : button(`Bring to ${kind === "social" ? "Social" : "Gallery"}`, `port:${asset.assetId}`, !passkey || asset.status === "unsupported")}${!passkey ? '<p class="fine">Register your passkey above before bringing this relic here.</p>' : ""}${timeline(asset)}</div></article>`;
 }
 function landing() {
-  return `<section class="hero"><div><p class="eyebrow">Portable meaning, on Monad</p><h1>One asset.<br><em>Every form.</em></h1><p class="lede">Win a relic. Wear it as a badge. Collect it as art.<br>Its form changes. Your ownership stays.</p><div class="actions"><a class="button" href="/arena" data-route>Enter Arena <span>↗</span></a><a class="text-link" href="/docs" data-route>Build with Rupa →</a></div><p class="fine">A live protocol, demonstrated through three small apps.</p></div><div class="hero-object">${art("hero-art")}<span class="object-caption">FIRE SWORD / MANY POSSIBILITIES</span></div></section><section class="form-grid"><a href="/arena" data-route><span>01 / ORIGIN</span><h2>Arena</h2><p>Earn something worth bringing with you.</p><b>Play the duel ↗</b></a><a href="/social" data-route><span>02 / IDENTITY</span><h2>Social</h2><p>A profile badge that carries your history.</p><b>Find your form ↗</b></a><a href="/gallery" data-route><span>03 / COLLECTION</span><h2>Gallery</h2><p>Artwork with a verifiable trail.</p><b>Open the gallery ↗</b></a></section><section class="judge-path"><h2>A short path for judges</h2><p>Create a temporary wallet → get test MON → win in Arena → register a passkey → bring your relic to Social and Gallery.</p><p class="muted">The original asset stays in your wallet. Each port records an owner approval and a verifiable history.</p></section>`;
+  return `<section class="hero"><div class="hero-copy"><p class="eyebrow">Portable meaning, on Monad</p><h1>One asset.<br><em>Every form.</em></h1><p class="lede">Win a relic. Wear it as a badge. Collect it as art.<br>Its form changes. Your ownership stays.</p><div class="actions"><a class="button" href="/arena" data-route>Enter Arena <span>↗</span></a><a class="text-link" href="/docs" data-route>Build with Rupa →</a></div><p class="fine">A live protocol, demonstrated through three small apps.</p></div>${formPreview()}</section><section class="form-grid"><a href="/arena" data-route><span class="form-mini" aria-hidden="true">${formArt("arena")}</span><span>01 / ORIGIN</span><h2>Arena</h2><p>Earn something worth bringing with you.</p><b>Play the duel ↗</b></a><a href="/social" data-route><span class="form-mini" aria-hidden="true">${formArt("social")}</span><span>02 / IDENTITY</span><h2>Social</h2><p>A profile badge that carries your history.</p><b>Find your form ↗</b></a><a href="/gallery" data-route><span class="form-mini" aria-hidden="true">${formArt("gallery")}</span><span>03 / COLLECTION</span><h2>Gallery</h2><p>Artwork with a verifiable trail.</p><b>Open the gallery ↗</b></a></section><section class="judge-path"><h2>A short path for judges</h2><p>Create a temporary wallet → get test MON → win in Arena → register a passkey → bring your relic to Social and Gallery.</p><p class="muted">The original asset stays in your wallet. Each port records an owner approval and a verifiable history.</p></section>`;
 }
 function arena() {
-  return `<section class="page-heading"><p class="eyebrow">01 / The origin</p><h1>Earn your first form.</h1><p>A three-move training duel. Read the guardian, then make your move.</p></section>${walletPanel()}<section class="arena-grid"><div class="guardian panel"><span class="eyebrow">Training guardian</span><div class="guardian-mark">${slime(120, "#8CF2D0")}</div><h2>${won ? "Victory. Relic unlocked." : move ? move === "strike" ? "An opening. Strike now." : "Incoming flame. Raise your guard." : "A relic waits on the other side."}</h2><p class="muted">${won ? "Claim the Fire Sword, or record a new win for a relic you already own." : "Strike → Guard → Strike. Your progress is checked by the demo service."}</p><div class="actions">${!move && !won ? button("Start duel", "start", !walletClient) : won ? button(assets.length ? "Record victory" : "Mint relic", "reward") : `${button("Strike", "move:strike")}${button("Guard", "move:guard", false, "secondary")}`}</div></div><div class="arena-relic">${art("arena")}<div><span class="eyebrow">${assets.length ? `In your wallet · asset #${assets[0]!.assetId}` : "Your reward"}</span><h2>Fire Sword</h2><p class="muted">${assets.length ? "Ready for a different life in Social and Gallery." : "One canonical relic. Gold rarity. Fire element."}</p>${assets.length ? '<a class="button" href="/social" data-route>Continue to Social →</a>' : ""}</div></div></section>`;
+  return `<section class="page-heading"><p class="eyebrow">01 / The origin</p><h1>Earn your first form.</h1><p>A three-move training duel. Read the guardian, then make your move.</p></section>${walletPanel()}<section class="arena-grid"><div class="guardian panel ${won ? "is-victory" : ""}"><span class="eyebrow">Training guardian</span><div class="guardian-mark">${slime(120, "#8CF2D0")}</div><h2>${won ? "Victory. Relic unlocked." : move ? move === "strike" ? "An opening. Strike now." : "Incoming flame. Raise your guard." : "A relic waits on the other side."}</h2><p class="muted">${won ? "Claim the Fire Sword, or record a new win for a relic you already own." : "Strike → Guard → Strike. Your progress is checked by the demo service."}</p><div class="actions">${!move && !won ? button("Start duel", "start", !walletClient) : won ? button(assets.length ? "Record victory" : "Mint relic", "reward") : `${button("Strike", "move:strike")}${button("Guard", "move:guard", false, "secondary")}`}</div></div><div class="arena-relic">${art("arena")}<div><span class="eyebrow">${assets.length ? `In your wallet · asset #${assets[0]!.assetId}` : "Your reward"}</span><h2>Fire Sword</h2><p class="muted">${assets.length ? "Ready for a different life in Social and Gallery." : "One canonical relic. Gold rarity. Fire element."}</p>${assets.length ? '<a class="button" href="/social" data-route>Continue to Social →</a>' : ""}</div></div></section>`;
 }
 function consumer(kind: "social" | "gallery") {
   const emptyCard = `<section class="empty panel"><span class="empty-mark">${slime(90, "#FF9CC8")}</span><h2>Your next form starts in Arena.</h2><p>Create a demo wallet and earn your Fire Sword first.</p><a class="button secondary" href="/arena" data-route>Go to Arena →</a></section>`;
@@ -160,9 +164,19 @@ function developerPanel() {
   if (!config || ["home", "docs", "capture"].includes(activeRoute)) return "";
   return `<details class="developer"><summary>Developer view <span>SDK · mappings · provenance</span></summary><div><p>Chain ${config.deployment.chainId} · agent #${esc(config.agentId)} · ${esc(config.llmMode)} provider</p><pre>const assets = await rupa.getAssetsFor(wallet, appId);\nconst history = await rupa.getProvenance(assetId);</pre><p class="fine">Gallery has its own mapping. Its first port requests rules unless that exact pair was prepared earlier. Repeat ports reuse the active mapping. No reputation score is claimed.</p></div></details>`;
 }
+function progressItems() {
+  return ["Mapping", "Passkey", "Transaction", "Confirmed"].map((label, index) => `<li ${index === portStage ? 'aria-current="step"' : ""} data-state="${portStage !== undefined && (index < portStage || portStage === 3) ? "complete" : "pending"}">${label}</li>`).join("");
+}
+function updatePortStage(stage: number) {
+  portStage = stage;
+  const node = root.querySelector<HTMLOListElement>(".action-progress");
+  if (node) { node.hidden = false; node.innerHTML = progressItems(); }
+}
 function render() {
+  disposePreview();
   root.setAttribute("aria-busy", String(busy));
-  root.innerHTML = `<header class="topbar"><a class="brand" href="/" data-route aria-label="Rupa home"><span class="brand-mark">${slime(36, "#FFF3A3")}</span>rupa<span class="brand-period">.</span></a><nav aria-label="Main navigation">${["arena", "social", "gallery", "docs"].map(route => `<a href="/${route}" data-route ${activeRoute === route ? 'aria-current="page"' : ""}>${route[0]!.toUpperCase()}${route.slice(1)}</a>`).join("")}</nav><span class="network"><i></i>${config?.deployment.chainId === 31337 ? "Local demo" : "Monad testnet"}</span></header><main>${activeRoute === "home" ? landing() : activeRoute === "arena" ? arena() : activeRoute === "social" || activeRoute === "gallery" ? consumer(activeRoute) : activeRoute === "capture" ? captureTemplate : docs()}<div class="messages"><p id="notice" role="status" aria-live="polite">${esc(notice)}</p>${lowFunds ? `<p class="error low-funds" role="alert">${esc(LOW_FUNDS_MESSAGE)} ${config?.faucet ? button("Get demo MON", "fund") : ""}</p>` : ""}${failure ? `<p class="error" role="alert">${esc(failure)}</p>` : ""}</div>${developerPanel()}</main><footer><span>Rupa · One asset. Every form.</span><a href="/capture" data-route>Passkey capture</a><a href="https://github.com/aryaayy/rupa" target="_blank" rel="noopener noreferrer">GitHub ↗</a></footer>`;
+  root.innerHTML = `<a class="skip-link" href="#main-content">Skip to content</a><header class="topbar"><a class="brand" href="/" data-route aria-label="Rupa home"><img src="/brand/rupa-horizontal.png" alt="" width="2172" height="724" fetchpriority="high"></a><nav aria-label="Main navigation">${["arena", "social", "gallery", "docs"].map(route => `<a href="/${route}" data-route ${activeRoute === route ? 'aria-current="page"' : ""}>${route[0]!.toUpperCase()}${route.slice(1)}</a>`).join("")}</nav><span class="network"><i></i>${config?.deployment.chainId === 31337 ? "Local demo" : "Monad testnet"}</span></header><main id="main-content" tabindex="-1">${activeRoute === "home" ? landing() : activeRoute === "arena" ? arena() : activeRoute === "social" || activeRoute === "gallery" ? consumer(activeRoute) : activeRoute === "capture" ? captureTemplate : docs()}<div class="messages"><ol class="action-progress" aria-label="Port progress" ${portStage === undefined ? "hidden" : ""}>${progressItems()}</ol><p id="notice" role="status" aria-live="polite">${esc(notice)}</p>${lowFunds ? `<p class="error low-funds" role="alert">${esc(LOW_FUNDS_MESSAGE)} ${config?.faucet ? button("Get demo MON", "fund") : ""}</p>` : ""}${failure ? `<p class="error" role="alert">${esc(failure)}</p>` : ""}</div>${developerPanel()}</main><footer><span>Rupa · One asset. Every form.</span><a href="/capture" data-route>Passkey capture</a><a href="https://github.com/aryaayy/rupa" target="_blank" rel="noopener noreferrer">GitHub ↗</a></footer>`;
+  disposePreview = mountFormPreview(root);
   if (activeRoute === "capture") mountCapture();
 }
 async function review(preview: PortPreview): Promise<boolean> {
@@ -195,7 +209,16 @@ root.addEventListener("click", event => {
         if (!funds.ok) throw new RupaError("INSUFFICIENT_FUNDS", `Not enough MON for gas. Need about ${formatEther(funds.needed)} MON. Get demo MON and try again.`);
       }
       const labels = { "mapping:cached": "Using this app's cached mapping.", "mapping:requesting": "Requesting a reusable mapping rule…", "passkey:prompt": "Approve this port with your passkey.", "tx:sent": "Port submitted. Waiting for confirmation…", "tx:confirmed": "Port confirmed. Verifying provenance…" };
-      await sdk().port(BigInt(action.slice(5)), target, passkey, { onReview: review, onStep: step => status(labels[step]) });
+      updatePortStage(0);
+      await sdk().port(BigInt(action.slice(5)), target, passkey, {
+        onReview: async preview => { updatePortStage(1); return review(preview); },
+        onStep: step => {
+          updatePortStage(step.startsWith("mapping:") ? 0 : step === "passkey:prompt" ? 1 : 2);
+          status(labels[step]);
+        },
+      });
+      recentlyPorted = BigInt(action.slice(5));
+      updatePortStage(3);
       status(`Relic is active in ${activeRoute === "social" ? "Social" : "Gallery"}. Ownership is unchanged.`);
     }
   });
@@ -208,7 +231,7 @@ document.addEventListener("click", event => {
 async function navigate() {
   activeRoute = location.pathname.slice(1).split("/")[0] || "home";
   if (activeRoute !== "home" && !routes.includes(activeRoute as typeof routes[number])) activeRoute = "docs";
-  failure = ""; assets = []; busy = true; render();
+  failure = ""; assets = []; portStage = undefined; recentlyPorted = undefined; busy = true; render();
   try { await refresh(); } catch (error) { failure = error instanceof Error ? error.message : "Unable to load assets."; }
   finally { busy = false; }
   render(); window.scrollTo(0, 0);
