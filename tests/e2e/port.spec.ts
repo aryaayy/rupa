@@ -46,10 +46,22 @@ test("Arena → mint → Social and Gallery → real virtual-passkey approvals",
     await page.getByRole("button", { name: `Bring to ${label}`, exact: true }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(page.getByRole("button", { name: "Approve with passkey", exact: true })).toBeEnabled();
+    if (route === "social") {
+      // Cancelling review must not celebrate or consume an approval nonce.
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await ready();
+      await expect(page.getByRole("list", { name: "Port progress", exact: true })).toBeHidden();
+      await expect(page.locator(".just-ported")).toHaveCount(0);
+      expect(await client.readContract({ address: manifest.contracts.PasskeyApprover, abi: passkeyApproverAbi, functionName: "nonces", args: [owner] })).toBe(0n);
+      await page.getByRole("button", { name: `Bring to ${label}`, exact: true }).click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+    }
     await page.getByRole("button", { name: "Approve with passkey", exact: true }).click();
     await expect(page.locator("#notice")).toContainText(`active in ${label}`);
     await ready();
     await expect(page.getByText("Hash chain verified ✓", { exact: true })).toBeVisible();
+    await expect(page.getByRole("list", { name: "Port progress", exact: true }).locator('[aria-current="step"]')).toHaveText("Confirmed");
+    await page.screenshot({ path: `.local/ui-preview-${route}.png`, fullPage: true, animations: "disabled" });
     expect(new URL(page.url()).pathname).toBe(`/${route}`);
   }
   const sdk = createRupa({ publicClient: client, deployment: manifest });
@@ -57,7 +69,8 @@ test("Arena → mint → Social and Gallery → real virtual-passkey approvals",
   expect(history.map(record => record.toAppId)).toEqual([manifest.apps.social, manifest.apps.gallery]);
   expect(await client.readContract({ address: manifest.contracts.RupaAsset, abi: rupaAssetAbi, functionName: "ownerOfAsset", args: [assetId] })).toBe(owner);
   expect(await client.readContract({ address: manifest.contracts.PasskeyApprover, abi: passkeyApproverAbi, functionName: "nonces", args: [owner] })).toBe(2n);
-  expect(translates).toEqual([manifest.apps.social, manifest.apps.gallery]);
+  // A cancelled review retries the same proposal; the agent deduplicates it.
+  expect(translates).toEqual([manifest.apps.social, manifest.apps.social, manifest.apps.gallery]);
   // Fresh targets require separate mappings. Re-reading active forms must not request another translation.
   await page.getByRole("navigation").getByRole("link", { name: "Arena", exact: true }).click();
   await win();
@@ -66,7 +79,7 @@ test("Arena → mint → Social and Gallery → real virtual-passkey approvals",
   await ready();
   await page.getByRole("navigation").getByRole("link", { name: "Social", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Fire Sword — 1 wins", exact: true })).toBeVisible();
-  expect(translates).toHaveLength(2);
+  expect(translates).toHaveLength(3);
   await cdp.send("WebAuthn.removeVirtualAuthenticator", { authenticatorId });
 });
 

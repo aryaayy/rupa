@@ -67,6 +67,10 @@ Status: **diterapkan, 11 Oktober 2026**. Default demo memakai disposable Anvil 3
 
 Arena memakai server-confirmed duel dan burner per-tab; mint pertama tidak mengemit WIN, kemenangan berikutnya mencatat Used(WIN). Faucet server dibatasi per wallet/IP/global dan authenticated session. Batas/cache/pending tracking berada di memori satu proses; multi-instance/dana lebih besar membutuhkan persistence. Setup app/identity menyimpan checkpoint publik untuk resume transaksi unknown. Reputation, waitlist dan generic SDK admin facade tidak termasuk release ini.
 
+### D-16 — Logo dan motion preview
+
+Status: **disetujui pengguna untuk implementasi lokal, 12 Oktober 2026**. Logo memakai slime kuning simetris dan wordmark pixel warna-warni hasil GPT yang dipilih pengguna. Simpan gambar asli sebagai referensi, pertahankan tema pixel pada `main` terbaru, dan finishing UI sebelum integrasi LLM asli. Hero memperagakan pedang → badge → artwork dengan pemilihan manual, kontrol playback, dan reduced motion. Ilustrasi hero tidak menyatakan transaksi atau mapping live sudah terjadi. Animasi keberhasilan port hanya sesudah SDK mengonfirmasi transaksi. Preview berjalan dengan disposable Anvil; deployment lima kontrak Monad dan konfigurasi provider tetap tidak disentuh. Rincian ada di [visual finishing](design/2026-10-12-ui-motion.md). Pengguna kemudian mengizinkan commit, push branch, dan PR untuk review. Deployment situs dan integrasi provider tetap merupakan pekerjaan terpisah.
+
 ## Keputusan pengguna yang masih terbuka
 
 Arahan awal deployment nanti telah dilengkapi pengguna dengan alamat kontrak yang sudah live dan domain final. Pekerjaan ini mempertahankan deployment tersebut; belum melakukan registrasi live atau hosting. Pengguna mengonfirmasi app IDs dan agent ID/service URL belum dibuat.

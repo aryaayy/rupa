@@ -68,3 +68,23 @@ The sandbox cannot resolve external npm hosts. Existing installed dependencies c
 ## Historical context
 
 Before the owner's deployment update, the scaffold had 42 local Foundry and 16 SDK tests, no live browser evidence available in this workspace, and earlier pnpm/network bootstrap failures. Those initial limitations are superseded only where the current evidence above says so. In particular, the owner's successful fork/Windows Hello report is retained separately from this environment's failed rerun.
+
+## UI and motion preview — 12 October 2026
+
+Local review changes on `feat/ui-motion`, based on upstream `16364b2`. The checkout was fast-forwarded from `71ab3ca` before editing. This section records the local preview validation before PR publication. The owner subsequently authorized committing, pushing the branch and opening a PR; live deployment and provider changes remain outside this work.
+
+- Fresh `pnpm install --frozen-lockfile` succeeded using pnpm 10.20.0 with temporary Corepack/store paths. Lockfile and dependency declarations were not changed.
+- `pnpm typecheck`: PASS.
+- `pnpm test`: PASS, 96 TypeScript tests across 13 files.
+- `pnpm build` and filtered web build: PASS. The existing bundle-size warning remains (main JS about 508 kB / 151 kB gzip).
+- Browser suite: four tests PASS on disposable Anvil, including mint, two ports with a CDP virtual authenticator, provenance, ownership, WIN updates, direct routes, keyboard form selection, pause, reduced motion and mobile overflow.
+- Cancellation coverage confirms the progress/success UI clears and the approval nonce stays zero before retry. A retry requests the same proposed mapping; the agent deduplicates it.
+- Motion test was observed failing on the original UI because the form selector did not exist, then passing after implementation.
+- Screenshots are kept in ignored `.local/ui-preview-{desktop,mobile,social,gallery}.png`. Capture finishes finite animations so the screenshot shows the settled result.
+- Five live contract sources, SDK, agent, deployment manifests and provider configuration remain unchanged by this UI work. Contract unit/fork tests and live device approval were not rerun; local E2E uses real P256 math with the local verifier.
+
+The preview uses `http://localhost:5173` with disposable chain 31337 and mock rules. `pnpm demo` restarts it. This evidence is a local UI acceptance check, not a claim of hosted real-LLM completion.
+
+### PR preparation follow-up
+
+Before publication, the branch was fast-forwarded to `5051b5c` to include the upstream font-color correction while preserving its original author. Typecheck, filtered web build and the four browser checks were rerun on the combined tree. Gitleaks 8.24.0 scanned a complete export of the staged repository with the project config and reported **no leaks found**. The scanner archive was verified against the official release SHA256 checksum. The user authorized branch push and PR creation; merging and live deployment are separate.
