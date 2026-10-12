@@ -69,3 +69,19 @@ describe("mapping agent", () => {
     await f.translator.translate(1n, 2); expect(f.chain.propose).toHaveBeenCalledOnce();
   });
 });
+
+describe("transient provider outages", () => {
+  it("retries DEPENDENCY_UNAVAILABLE once, then gives up", async () => {
+    const { RupaError } = await import("@rupa/sdk");
+    const f = setup();
+    const original = f.provider.getMockImplementation();
+    f.provider.mockImplementationOnce(async () => { throw new RupaError("DEPENDENCY_UNAVAILABLE", "busy"); });
+    await f.translator.translate(1n, 2);
+    expect(f.provider).toHaveBeenCalledTimes(2);
+    const g = setup();
+    g.provider.mockImplementation(async () => { throw new RupaError("DEPENDENCY_UNAVAILABLE", "busy"); });
+    await expect(g.translator.translate(1n, 2)).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
+    expect(g.provider).toHaveBeenCalledTimes(2);
+    void original;
+  });
+});

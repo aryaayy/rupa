@@ -42,7 +42,7 @@ export function createTranslator(options: { chain: TranslationChain; provider: R
       const name = asset.attrs.name, element = asset.attrs.element;
       if (typeof name !== "string" || name.length > 128 || typeof element !== "string" || element.length > 32) throw new RupaError("MAPPING_REJECTED", "Source public attributes do not match the supported profile.");
       const request: RuleRequest = { assetType, targetAppId, targetSchemaVersion: version, schema: target.schema, source: { base: { rarity: asset.base.rarity }, attrs: { name, element }, history: asset.context.history }, feedback: "" };
-      let mapping: Mapping | undefined;
+      let mapping: Mapping | undefined, unavailable = 0;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           stats.generated++;
@@ -52,7 +52,8 @@ export function createTranslator(options: { chain: TranslationChain; provider: R
           for (const sample of samples) applyMapping(proposed, sample, target.schema);
           mapping = proposed; break;
         } catch (error) {
-          if (error instanceof RupaError && error.code === "DEPENDENCY_UNAVAILABLE") throw error;
+          // Bounded: one extra provider round for transient outages, without consuming a validation attempt.
+          if (error instanceof RupaError && error.code === "DEPENDENCY_UNAVAILABLE") { if (++unavailable > 1) throw error; attempt--; continue; }
           request.feedback = error instanceof MappingError ? `${error.code}: ${error.message}` : "Return a reusable rule satisfying the supplied schema and metadata.";
         }
       }

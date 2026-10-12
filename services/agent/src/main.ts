@@ -30,9 +30,10 @@ async function main() {
   const publicClient = createPublicClient({ chain, transport: http() });
   if (await publicClient.getChainId() !== manifest.chainId) throw new Error("Configured RPC chain does not match deployment.");
   const agent = createWalletClient({ chain, transport: http(), account: privateKeyToAccount(secret("AGENT_PRIVATE_KEY")) });
+  const count = (name: string, fallback: number) => { const value = Number(process.env[name] || fallback); if (!Number.isInteger(value) || value < 1) throw new Error(`Invalid ${name}.`); return value; };
   const mode = process.env.LLM_PROVIDER || "mock";
   if (mode !== "mock" && mode !== "openai-compatible") throw new Error("LLM_PROVIDER must be mock or openai-compatible.");
-  const provider = mode === "mock" ? mockProvider : httpProvider({ baseUrl: process.env.LLM_BASE_URL || "https://api.openai.com/v1/", apiKey: process.env.LLM_API_KEY || "", model: process.env.LLM_MODEL || "" });
+  const provider = mode === "mock" ? mockProvider : httpProvider({ baseUrl: process.env.LLM_BASE_URL || "https://api.openai.com/v1/", apiKey: process.env.LLM_API_KEY || "", model: process.env.LLM_MODEL || "", ...(process.env.LLM_FALLBACK_MODEL ? { fallbackModel: process.env.LLM_FALLBACK_MODEL } : {}), timeoutMs: count("LLM_TIMEOUT_MS", 25_000) });
   if (mode !== "mock" && !process.env.PINATA_JWT) throw new Error("Set PINATA_JWT for live rule publication.");
   const publish = process.env.PINATA_JWT ? pinataPublisher(process.env.PINATA_JWT) : inlinePublisher;
   const winCounts = async (ids: readonly bigint[]) => { const { counts } = wins.query(ids); return new Map(ids.map(id => [id, counts[id.toString()]!] as const)); };
@@ -43,13 +44,13 @@ async function main() {
   const admin = process.env.DEMO_ADMIN_PRIVATE_KEY ? createWalletClient({ chain, transport: http(), account: privateKeyToAccount(secret("DEMO_ADMIN_PRIVATE_KEY")) }) : undefined;
   const funder = process.env.FAUCET_PRIVATE_KEY ? createWalletClient({ chain, transport: http(), account: privateKeyToAccount(secret("FAUCET_PRIVATE_KEY")) }) : undefined;
   const mon = (name: string, fallback: string) => { const value = process.env[name] || fallback; if (!/^\d+(\.\d{1,18})?$/.test(value)) throw new Error(`Invalid ${name}.`); return parseEther(value); };
-  const count = (name: string, fallback: number) => { const value = Number(process.env[name] || fallback); if (!Number.isInteger(value) || value < 1) throw new Error(`Invalid ${name}.`); return value; };
   const faucetAmount = mon("FAUCET_AMOUNT_MON", "0.2"), faucetMinBalance = mon("FAUCET_MIN_BALANCE_MON", "0.15");
   const faucet = { globalPerHour: count("FAUCET_GLOBAL_PER_HOUR", 10), perIp: count("FAUCET_PER_IP_PER_HOUR", 6), perWallet: count("FAUCET_PER_WALLET_PER_30MIN", 2) };
   const demo = admin ? createDemoAccess({ origin: manifest.origin, chainId: manifest.chainId, faucet, actions: createDemoActions({ faucetAmount, faucetMinBalance, publicClient, admin, deployment: manifest, arena: appIds.arena, afterReward: () => wins.refresh(), ...(funder ? { funder } : {}) }) }) : undefined;
   const app = createAgentApp({ config: { deployment: manifest, apps: appIds, agentId: agentId.toString(), llmMode: mode, faucet: !!funder && !!admin }, translator, wins, ...(demo ? { demo } : {}) });
-  const server = nodeServer(app), port = Number(process.env.AGENT_PORT || "8787");
+  const server = nodeServer(app), port = Number(process.env.AGENT_PORT || process.env.PORT || "8787");
+  const host = process.env.AGENT_HOST || (process.env.RENDER || process.env.PORT ? "0.0.0.0" : "localhost");
   server.on("error", () => { console.error("Agent HTTP server could not start."); process.exitCode = 1; });
-  server.listen(port, process.env.AGENT_HOST || "localhost", () => console.log(`Rupa agent ready on port ${port}; LLM mode: ${mode}.`));
+  server.listen(port, host, () => console.log(`Rupa agent ready on port ${port}; LLM mode: ${mode}.`));
 }
 main().catch(error => { console.error(error instanceof Error && /^(Configure|Invalid FAUCET|Register|Invalid identity|LLM_PROVIDER|Set PINATA|Configured RPC)/.test(error.message) ? error.message : "Agent startup failed. Check server configuration and RPC connectivity."); process.exitCode = 1; });

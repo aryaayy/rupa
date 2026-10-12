@@ -1,4 +1,4 @@
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { keccak256, toBytes, zeroHash } from "viem";
 import { createContentReader, inlineContent } from "../src/index.js";
 
@@ -20,4 +20,11 @@ it("blocks arbitrary and redirected origins, malformed IPFS and oversize respons
 it("rejects duplicate-key JSON even when its raw digest was registered", async () => {
   const raw = '{"x":1,"x":2}', read = createContentReader();
   await expect(read(`data:application/json;base64,${btoa(raw)}`, keccak256(toBytes(raw)))).rejects.toThrow();
+});
+
+describe("boundedText status detail", () => {
+  it("includes the HTTP status in RupaError.detail", async () => {
+    const { boundedText } = await import("../src/content.js");
+    await expect(boundedText(new Response("no", { status: 401 }))).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE", detail: "HTTP 401" });
+  });
 });
