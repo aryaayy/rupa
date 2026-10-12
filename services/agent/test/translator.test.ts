@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { keccak256, toBytes, zeroHash } from "viem";
 import type { Hex } from "viem";
 import { mappingId } from "@rupa/sdk";
 import { displaySchema } from "../src/demo.js";
-import { inlinePublisher, mockProvider } from "../src/provider.js";
+import { httpProvider, inlinePublisher, mockProvider } from "../src/provider.js";
+import type { LlmBudget, RuleRequest } from "../src/provider.js";
 import { createTranslator } from "../src/translator.js";
 import type { Proposal, TranslationChain } from "../src/translator.js";
 import type { Mapping } from "@rupa/mapping-dsl";
@@ -67,5 +68,101 @@ describe("mapping agent", () => {
     await expect(f.translator.translate(1n, 2)).rejects.toMatchObject({ code: "SCHEMA_OUTDATED" });
     expect(f.chain.propose).not.toHaveBeenCalled();
     await f.translator.translate(1n, 2); expect(f.chain.propose).toHaveBeenCalledOnce();
+  });
+});
+
+describe("transient provider outages", () => {
+  it("retries DEPENDENCY_UNAVAILABLE once, then gives up", async () => {
+    const { RupaError } = await import("@rupa/sdk");
+    const f = setup();
+    const original = f.provider.getMockImplementation();
+    f.provider.mockImplementationOnce(async () => { throw new RupaError("DEPENDENCY_UNAVAILABLE", "busy"); });
+    await f.translator.translate(1n, 2);
+    expect(f.provider).toHaveBeenCalledTimes(2);
+    const g = setup();
+    g.provider.mockImplementation(async () => { throw new RupaError("DEPENDENCY_UNAVAILABLE", "busy"); });
+    await expect(g.translator.translate(1n, 2)).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
+    expect(g.provider).toHaveBeenCalledTimes(2);
+    void original;
+  });
+});
+
+describe("llm deadline", () => {
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+  function hangOnAbort(init: RequestInit | undefined): Promise<Response> {
+    const signal = init?.signal;
+    return new Promise((_resolve, reject) => {
+      if (!signal) { reject(new Error("missing abort signal")); return; }
+      const fail = () => reject(signal.reason ?? Object.assign(new Error("timeout"), { name: "TimeoutError" }));
+      if (signal.aborted) fail();
+      else signal.addEventListener("abort", fail, { once: true });
+    });
+  }
+
+  async function elapsedUnderDeadline(run: () => Promise<unknown>) {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms: number) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(new DOMException("The operation was aborted due to timeout", "TimeoutError")), ms);
+      controller.signal.addEventListener("abort", () => clearTimeout(timer), { once: true });
+      return controller.signal;
+    });
+    const start = Date.now();
+    const pending = run().then(() => ({ failed: false as const }), (error: unknown) => ({ failed: true as const, error }));
+    await vi.runAllTimersAsync();
+    const result = await pending;
+    return { elapsed: Date.now() - start, result };
+  }
+
+  it("caps LLM calls per translate at 6, including fallback and the translator retry", async () => {
+    const f = setup();
+    const models: string[] = [];
+    const provider = httpProvider({ baseUrl: "https://llm.example/v1/", apiKey: "k", model: "m1", fallbackModel: "m2", deadlineMs: 600_000, random: () => 0, sleep: async () => {}, fetch: async (_url, init) => { models.push(JSON.parse(String(init?.body)).model); return new Response("", { status: 503 }); } });
+    const translator = createTranslator({ ...f.options, provider, deadlineMs: 600_000 });
+    await expect(translator.translate(1n, 2)).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
+    expect(models).toHaveLength(6);
+    expect(new Set(models)).toEqual(new Set(["m1", "m2"]));
+  });
+
+  it("does not retry a 401 configuration error", async () => {
+    const f = setup();
+    let calls = 0;
+    const provider = httpProvider({ baseUrl: "https://llm.example/v1/", apiKey: "k", model: "m1", fallbackModel: "m2", fetch: async () => { calls++; return new Response("no", { status: 401 }); } });
+    const translator = createTranslator({ ...f.options, provider });
+    await expect(translator.translate(1n, 2)).rejects.toMatchObject({ code: "INVALID_REQUEST", detail: "model m1: HTTP 401" });
+    expect(calls).toBe(1);
+    expect(f.publish).not.toHaveBeenCalled();
+  });
+
+  it("stays under 55s when every attempt times out, including fallback and the translator retry", async () => {
+    const f = setup();
+    let providerCalls = 0;
+    const provider = httpProvider({ baseUrl: "https://llm.example/v1/", apiKey: "k", model: "m1", fallbackModel: "m2", timeoutMs: 60_000, random: () => 1, fetch: (_url, init) => hangOnAbort(init) });
+    const wrapped = async (request: RuleRequest, budget?: LlmBudget) => { providerCalls++; return provider(request, budget); };
+    const translator = createTranslator({ ...f.options, provider: wrapped });
+    const { elapsed, result } = await elapsedUnderDeadline(() => translator.translate(1n, 2));
+    expect(result.failed).toBe(true);
+    if (result.failed) expect(result.error).toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
+    expect(providerCalls).toBe(2);
+    expect(elapsed).toBeGreaterThan(50_000);
+    expect(elapsed).toBeLessThanOrEqual(55_000);
+    expect(vi.mocked(AbortSignal.timeout).mock.calls.every(([ms]) => ms <= 55_000)).toBe(true);
+  });
+
+  it("stays under 55s when every attempt returns 429 with a large Retry-After, including fallback and the translator retry", async () => {
+    const f = setup();
+    let providerCalls = 0, fetches = 0;
+    const provider = httpProvider({ baseUrl: "https://llm.example/v1/", apiKey: "k", model: "m1", fallbackModel: "m2", random: () => 1, fetch: async () => { fetches++; return new Response("", { status: 429, headers: { "retry-after": "600" } }); } });
+    const wrapped = async (request: RuleRequest, budget?: LlmBudget) => { providerCalls++; return provider(request, budget); };
+    const translator = createTranslator({ ...f.options, provider: wrapped });
+    const { elapsed, result } = await elapsedUnderDeadline(() => translator.translate(1n, 2));
+    expect(result.failed).toBe(true);
+    if (result.failed) expect(result.error).toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
+    expect(providerCalls).toBe(2);
+    expect(fetches).toBeGreaterThan(0);
+    expect(fetches).toBeLessThanOrEqual(6);
+    expect(elapsed).toBeGreaterThan(50_000);
+    expect(elapsed).toBeLessThanOrEqual(55_000);
   });
 });

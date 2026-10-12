@@ -5,7 +5,8 @@ import type { Hex } from "viem";
 import { RupaError } from "./errors.js";
 
 export async function boundedText(response: Response, maxBytes = MAX_JSON_BYTES): Promise<string> {
-  if (!response.ok || Number(response.headers.get("content-length") ?? 0) > maxBytes || !response.body) throw new RupaError("DEPENDENCY_UNAVAILABLE", "Content response is unavailable or too large.");
+  if (!response.ok) throw new RupaError("DEPENDENCY_UNAVAILABLE", "Content response is unavailable or too large.", { detail: `HTTP ${response.status}` });
+  if (Number(response.headers.get("content-length") ?? 0) > maxBytes || !response.body) throw new RupaError("DEPENDENCY_UNAVAILABLE", "Content response is unavailable or too large.", { detail: `HTTP ${response.status}; body too large or missing` });
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;

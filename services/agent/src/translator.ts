@@ -3,6 +3,7 @@ import type { JsonObject, Mapping } from "@rupa/mapping-dsl";
 import { RupaError } from "@rupa/sdk";
 import type { LoadedAsset } from "@rupa/sdk";
 import type { Hex } from "viem";
+import { createLlmBudget, DEFAULT_LLM_DEADLINE_MS, LLM_CALL_CAP, LlmConfigError } from "./provider.js";
 import type { Publisher, RuleProvider, RuleRequest } from "./provider.js";
 import { RateLimiter } from "./limits.js";
 
@@ -14,7 +15,7 @@ export interface TranslationChain {
   validateCached(proposal: Proposal, asset: LoadedAsset, target: number): Promise<void>;
   propose(mapping: Mapping, content: { uri: string; hash: Hex }): Promise<Proposal>;
 }
-export function createTranslator(options: { chain: TranslationChain; provider: RuleProvider; publish: Publisher; types: Readonly<Record<string, string>>; namespace: string }) {
+export function createTranslator(options: { chain: TranslationChain; provider: RuleProvider; publish: Publisher; types: Readonly<Record<string, string>>; namespace: string; deadlineMs?: number; maxLlmCalls?: number }) {
   const pending = new Map<string, Promise<Proposal>>(), cache = new Map<string, Proposal>();
   const rate = new RateLimiter();
   const stats = { requests: 0, generated: 0, reused: 0 };
@@ -42,17 +43,20 @@ export function createTranslator(options: { chain: TranslationChain; provider: R
       const name = asset.attrs.name, element = asset.attrs.element;
       if (typeof name !== "string" || name.length > 128 || typeof element !== "string" || element.length > 32) throw new RupaError("MAPPING_REJECTED", "Source public attributes do not match the supported profile.");
       const request: RuleRequest = { assetType, targetAppId, targetSchemaVersion: version, schema: target.schema, source: { base: { rarity: asset.base.rarity }, attrs: { name, element }, history: asset.context.history }, feedback: "" };
-      let mapping: Mapping | undefined;
+      const budget = createLlmBudget(Date.now(), options.deadlineMs ?? DEFAULT_LLM_DEADLINE_MS, options.maxLlmCalls ?? LLM_CALL_CAP);
+      let mapping: Mapping | undefined, unavailable = 0;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           stats.generated++;
-          const proposed = parseMapping(await options.provider(request));
+          const proposed = parseMapping(await options.provider(request, budget));
           if (proposed.assetType !== assetType || proposed.targetAppId !== targetAppId || proposed.targetSchemaVersion !== version) throw new RupaError("MAPPING_REJECTED", "Model changed mapping metadata.");
           const samples = [request.source, ...[0, 2, 4].map(rarity => ({ base: { rarity }, attrs: { name: "Sample relic", element: "unknown" }, history: { wins: rarity * 10 } }))];
           for (const sample of samples) applyMapping(proposed, sample, target.schema);
           mapping = proposed; break;
         } catch (error) {
-          if (error instanceof RupaError && error.code === "DEPENDENCY_UNAVAILABLE") throw error;
+          // Configuration failures are not transient. One extra round is allowed for outages, on the same deadline and call cap.
+          if (error instanceof LlmConfigError) throw error;
+          if (error instanceof RupaError && error.code === "DEPENDENCY_UNAVAILABLE") { if (++unavailable > 1) throw error; attempt--; continue; }
           request.feedback = error instanceof MappingError ? `${error.code}: ${error.message}` : "Return a reusable rule satisfying the supplied schema and metadata.";
         }
       }
